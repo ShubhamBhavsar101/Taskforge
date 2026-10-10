@@ -1,0 +1,16 @@
+{
+  "name": "taskforge-api",
+  "version": "1.0.0",
+  "description": "TaskForge — simple to-do API with PostgreSQL and Redis",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "ioredis": "^5.6.1",
+    "pg": "^8.16.0"
+  }
+}
