@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import InfraPanel from './components/InfraPanel';
 import TaskManager from './components/TaskManager';
 import Footer from './components/Footer';
 
@@ -7,26 +6,8 @@ const API_BASE = '/api';
 
 export default function App() {
   const [tasks, setTasks] = useState([]);
-  const [infra, setInfra] = useState(null);
   const [healthStatus, setHealthStatus] = useState('ok');
   const [loading, setLoading] = useState(false);
-  const [infraLoading, setInfraLoading] = useState(false);
-
-  // Fetch infra details
-  const fetchInfra = useCallback(async () => {
-    try {
-      setInfraLoading(true);
-      const res = await fetch(`${API_BASE}/infra`);
-      if (res.ok) {
-        const data = await res.json();
-        setInfra(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch infra details:', err);
-    } finally {
-      setInfraLoading(false);
-    }
-  }, []);
 
   // Fetch tasks
   const fetchTasks = useCallback(async (isInitial = false) => {
@@ -65,7 +46,6 @@ export default function App() {
       });
       if (res.ok) {
         await fetchTasks();
-        await fetchInfra();
       }
     } catch (err) {
       console.error('Failed to add task:', err);
@@ -80,7 +60,6 @@ export default function App() {
       });
       if (res.ok) {
         await fetchTasks();
-        await fetchInfra();
       }
     } catch (err) {
       console.error('Failed to toggle task:', err);
@@ -95,7 +74,6 @@ export default function App() {
       });
       if (res.ok) {
         await fetchTasks();
-        await fetchInfra();
       }
     } catch (err) {
       console.error('Failed to delete task:', err);
@@ -104,17 +82,11 @@ export default function App() {
 
   useEffect(() => {
     fetchTasks(true);
-    fetchInfra();
     checkHealth();
 
-    const infraInterval = setInterval(fetchInfra, 8000);
     const healthInterval = setInterval(checkHealth, 30000);
-
-    return () => {
-      clearInterval(infraInterval);
-      clearInterval(healthInterval);
-    };
-  }, [fetchTasks, fetchInfra, checkHealth]);
+    return () => clearInterval(healthInterval);
+  }, [fetchTasks, checkHealth]);
 
   return (
     <>
@@ -132,21 +104,13 @@ export default function App() {
               className={`live-pulse ${healthStatus === 'ok' ? '' : 'error'}`}
             />
             <span>
-              {healthStatus === 'ok' ? 'Cluster Healthy' : 'Degraded Cluster'}
+              {healthStatus === 'ok' ? 'Online' : 'Offline'}
             </span>
           </div>
         </div>
       </header>
 
       <main className="app-container">
-        {/* Left Column: Simple Running Containers Panel */}
-        <InfraPanel
-          infra={infra}
-          loading={infraLoading}
-          onRefresh={fetchInfra}
-        />
-
-        {/* Right Column: Task Management App */}
         <TaskManager
           tasks={tasks}
           loading={loading}

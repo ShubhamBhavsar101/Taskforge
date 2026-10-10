@@ -2,14 +2,10 @@ services:
   web:
     build: .
     container_name: taskforge-web-1
-    hostname: taskforge-web-1
     environment:
       - PORT=3000
-      - CONTAINER_NAME=taskforge-web-1
       - DATABASE_URL=postgres://taskforge:taskforge@postgres:5432/taskforge
       - REDIS_URL=redis://redis:6379
-      - POSTGRES_CONTAINER_NAME=taskforge-postgres-1
-      - REDIS_CONTAINER_NAME=taskforge-redis-1
     ports:
       - "3000:3000"
     depends_on:

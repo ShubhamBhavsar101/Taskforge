@@ -3,7 +3,6 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const Redis = require("ioredis");
 const path = require("path");
-const os = require("os");
 const fs = require("fs");
 
 // --- Config ---
@@ -22,130 +21,10 @@ const redis = new Redis(REDIS_URL, {
 });
 
 const app = express();
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-    exposedHeaders: [
-      "X-Served-By-Web",
-      "X-Served-By-DB",
-      "X-Served-By-Redis",
-      "X-Response-Time",
-      "X-Cache",
-    ],
-  })
-);
+app.use(cors());
 app.use(express.json());
 
-// --- Helper Functions for Infrastructure Details ---
-function parseHostFromUrl(urlStr, defaultHost) {
-  try {
-    const parsed = new URL(urlStr);
-    return { host: parsed.hostname, port: parsed.port || defaultHost };
-  } catch {
-    return { host: "localhost", port: defaultHost };
-  }
-}
-
-const dbConfig = parseHostFromUrl(DATABASE_URL, "5432");
-const redisConfig = parseHostFromUrl(REDIS_URL, "6379");
-
-function getWebContainer() {
-  const raw =
-    process.env.CONTAINER_NAME ||
-    process.env.HOSTNAME ||
-    os.hostname();
-  const containerId =
-    process.env.CONTAINER_NAME ||
-    (/^[0-9a-f]{12}$/i.test(raw) ? "taskforge-web-1" : raw);
-  return {
-    container: containerId,
-    hostname: os.hostname(),
-    pid: process.pid,
-    platform: `${os.platform()} (${os.arch()})`,
-    uptimeSeconds: Math.floor(process.uptime()),
-    memoryMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
-    nodeVersion: process.version,
-  };
-}
-
-async function getDbContainer() {
-  try {
-    const res = await db.query(
-      "SELECT inet_server_addr() AS ip, inet_server_port() AS port, pg_backend_pid() AS pid, current_database() AS db_name, version() AS version"
-    );
-    const row = res.rows[0] || {};
-    return {
-      status: "connected",
-      container: process.env.POSTGRES_CONTAINER_NAME || dbConfig.host,
-      host: dbConfig.host,
-      ip: row.ip ? row.ip.toString() : dbConfig.host,
-      port: row.port || dbConfig.port,
-      backendPid: row.pid || null,
-      database: row.db_name || "taskforge",
-      version: row.version ? row.version.split(" ")[1] : "16",
-    };
-  } catch (err) {
-    return {
-      status: "error",
-      container: dbConfig.host,
-      host: dbConfig.host,
-      port: dbConfig.port,
-      error: err.message,
-    };
-  }
-}
-
-async function getRedisContainer() {
-  try {
-    const rawInfo = await redis.info("server");
-    const runIdMatch = rawInfo.match(/run_id:([^\r\n]+)/);
-    const versionMatch = rawInfo.match(/redis_version:([^\r\n]+)/);
-    const tcpPortMatch = rawInfo.match(/tcp_port:([^\r\n]+)/);
-    const runId = runIdMatch ? runIdMatch[1] : "unknown";
-    const shortRunId = runId.length > 8 ? runId.slice(0, 8) : runId;
-
-    return {
-      status: "connected",
-      container:
-        process.env.REDIS_CONTAINER_NAME ||
-        (redis.options.host ? redis.options.host : redisConfig.host),
-      host: redis.options.host || redisConfig.host,
-      port: tcpPortMatch ? tcpPortMatch[1] : (redis.options.port || redisConfig.port),
-      runId: runId,
-      shortRunId: shortRunId,
-      version: versionMatch ? versionMatch[1] : "7.x",
-    };
-  } catch (err) {
-    return {
-      status: "error",
-      container: redisConfig.host,
-      host: redisConfig.host,
-      port: redisConfig.port,
-      error: err.message,
-    };
-  }
-}
-
-// --- Middleware: Track per-request infra serving headers ---
-app.use((req, res, next) => {
-  const start = Date.now();
-  const web = getWebContainer();
-  res.setHeader("X-Served-By-Web", web.container);
-  res.setHeader("X-Served-By-DB", dbConfig.host);
-  res.setHeader("X-Served-By-Redis", redisConfig.host);
-
-  const originalEnd = res.end;
-  res.end = function (...args) {
-    if (!res.headersSent) {
-      res.setHeader("X-Response-Time", `${Date.now() - start}ms`);
-    }
-    return originalEnd.apply(this, args);
-  };
-  next();
-});
-
-// Serve frontend: dist if built, otherwise static root
+// Serve frontend
 const frontendDist = path.join(__dirname, "../frontend/dist");
 const frontendStatic = path.join(__dirname, "../frontend");
 if (fs.existsSync(frontendDist)) {
@@ -165,33 +44,15 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-// --- GET /api/infra: Infrastructure & Container Details ---
-app.get("/api/infra", async (_req, res) => {
-  const web = getWebContainer();
-  const [dbData, redisData] = await Promise.all([
-    getDbContainer(),
-    getRedisContainer(),
-  ]);
-
-  res.json({
-    web,
-    db: dbData,
-    redis: redisData,
-    timestamp: new Date().toISOString(),
-  });
-});
-
 // --- GET /api/tasks ---
 app.get("/api/tasks", async (_req, res) => {
   try {
     // Check cache
     const cached = await redis.get("tasks:list");
     if (cached) {
-      res.setHeader("X-Cache", "HIT");
       return res.json(JSON.parse(cached));
     }
 
-    res.setHeader("X-Cache", "MISS");
     const { rows } = await db.query(
       "SELECT * FROM tasks ORDER BY created_at DESC"
     );

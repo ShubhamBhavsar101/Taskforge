@@ -1,6 +1,6 @@
 # TaskForge
 
-**TaskForge** is a distributed, high-performance task management platform backed by **React**, **Express.js**, **PostgreSQL**, and **Redis**. It features a real-time **Infrastructure Telemetry & Container Routing Panel** that maps every request across service tiers and displays container identity, process metrics, and cache statuses.
+**TaskForge** is a fast, lightweight, and modern task management platform built with **React**, **Node.js (Express)**, **PostgreSQL**, and **Redis**.
 
 ---
 
@@ -9,14 +9,14 @@
 ```
                       ┌────────────────────────────────────────┐
                       │          React 19 Frontend             │
-                      │   (Container Telemetry & Task App)     │
+                      │        (Task Management UI)            │
                       └──────────────────┬─────────────────────┘
                                          │
-                                   HTTP / REST
+                                    HTTP / REST
                                          ▼
                       ┌────────────────────────────────────────┐
                       │          Node.js / Express 5           │
-                      │  (Telemetry Headers & REST Endpoints)  │
+                      │            (REST API Server)           │
                       └──────────┬──────────────────┬──────────┘
                                  │                  │
                           SQL Connection       Redis Protocol
@@ -28,10 +28,10 @@
                     └──────────────────┘  └──────────────────┘
 ```
 
-- **Web Tier (Express.js / React)**: Serves static assets, manages CRUD endpoints, and attaches `X-Served-By-Web`, `X-Served-By-DB`, and `X-Served-By-Redis` headers.
-- **Left Telemetry Column**: Displays live container hostnames/IDs, process PIDs, PostgreSQL server IP/port, Redis instance `run_id`, response latencies, and an active tri-service container routing trace.
-- **Database Tier (PostgreSQL 16)**: Persistent storage for tasks with automated schema initialization via `init.sql`.
-- **Cache Tier (Redis 7)**: 30-second TTL read caching for tasks list with instant invalidation upon mutations (`POST`, `PATCH`, `DELETE`).
+- **Frontend (React 19 / Vite)**: Clean, responsive dark-mode task manager with priority filtering, task completion toggles, and live counters.
+- **Backend (Express 5)**: REST API handling CRUD operations with database persistence and caching.
+- **Database (PostgreSQL 16)**: Persistent storage for tasks with schema auto-initialized via `init.sql`.
+- **Cache (Redis 7)**: 30-second TTL read-through cache for the tasks list with automated invalidation upon updates.
 
 ---
 
@@ -44,105 +44,69 @@
 
 ## How to Run the Project
 
-### Option 1: Complete Docker Deployment (All Services Containerized)
+### Option 1: Docker Deployment (Recommended)
 
-Run the full cluster (Web API, PostgreSQL, and Redis) using Docker Compose:
+Start the entire application stack (Web, PostgreSQL, Redis) with a single command:
 
 ```bash
 docker compose up -d --build
 ```
 
-#### Multi-Replica Scaling Demo
-To demonstrate multi-container awareness (e.g. 3 container replicas per service), scale the web service:
+Access the app in your browser:
+👉 **[http://localhost:3000](http://localhost:3000)**
 
-```bash
-docker compose up -d --scale web=3
-```
-
-Open **`http://localhost:3000`** in your browser. As you add or toggle tasks, the left-hand column will stream live traces showing which container replica handled the request!
-
-To stop containers:
+To stop all containers:
 ```bash
 docker compose down
 ```
 
 ---
 
-### Option 2: Hybrid Local Development (Docker Infra + Local Node)
+### Option 2: Hybrid Local Development (Docker DB + Native Node)
 
-Use Docker for the databases while running the API and frontend natively for rapid iteration:
+Run database and cache containers in Docker while developing the frontend and backend natively:
 
-#### 1. Start Database & Cache Containers
+#### 1. Start Infrastructure Containers
 ```bash
 docker compose up -d postgres redis
 ```
-> **Note**: PostgreSQL is mapped to port `5433` (`5433:5432`) by default to prevent conflicts with any pre-existing local PostgreSQL service on `5432`.
+*(PostgreSQL is mapped to port `5433` by default to avoid local port 5432 conflicts).*
 
 #### 2. Install Dependencies
 ```bash
-# Backend
-cd src/api
-npm install
+# API dependencies
+cd src/api && npm install
 
-# Frontend
-cd ../frontend
-npm install
+# Frontend dependencies
+cd ../frontend && npm install
 ```
 
-#### 3. Start the Backend API
+#### 3. Run Backend API
 ```bash
-# Run with local port configuration
+cd src/api
 POSTGRES_PORT=5433 npm run dev
-# (or from the project root: POSTGRES_PORT=5433 node src/api/server.js)
 ```
-The API starts on `http://localhost:3000`.
+API runs on `http://localhost:3000`.
 
-#### 4. Start the React Frontend (Vite Dev Server)
+#### 4. Run React Frontend (Vite Dev Server)
 In a separate terminal:
 ```bash
 cd src/frontend
 npm run dev
 ```
-Open **`http://localhost:5173`** in your browser. Vite automatically proxies `/api` calls to `http://localhost:3000`.
+Open **`http://localhost:5173`** (Vite automatically proxies `/api` requests to port 3000).
 
 ---
 
-### Option 3: Unified Local Production Server
-
-Build the React frontend bundle and serve everything through the Express backend:
-
-```bash
-# 1. Build React frontend
-cd src/frontend
-npm run build
-
-# 2. Start unified server
-cd ../api
-POSTGRES_PORT=5433 node server.js
-```
-
-Open **`http://localhost:3000`** in your browser.
-
----
-
-## API & Telemetry Endpoints
+## API Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/health` | Health probe checking DB & Redis connectivity |
-| `GET` | `/api/infra` | Infrastructure telemetry (container ID, PID, IP, port, Redis run_id) |
-| `GET` | `/api/tasks` | Fetches tasks (Redis cache-backed, returns `X-Cache: HIT/MISS`) |
-| `POST` | `/api/tasks` | Creates a new task and invalidates Redis cache |
-| `PATCH` | `/api/tasks/:id` | Toggles task completion and invalidates Redis cache |
-| `DELETE` | `/api/tasks/:id` | Deletes a task and invalidates Redis cache |
-
-### Custom Response Headers
-Every API response returns:
-- `X-Served-By-Web`: Name/ID of the Web container handling the request
-- `X-Served-By-DB`: PostgreSQL server host/address
-- `X-Served-By-Redis`: Redis server host/address
-- `X-Response-Time`: Request execution time in milliseconds
-- `X-Cache`: `HIT` or `MISS` (on `/api/tasks`)
+| `GET` | `/api/tasks` | Fetches tasks (Redis cache-backed) |
+| `POST` | `/api/tasks` | Creates a new task and invalidates cache |
+| `PATCH` | `/api/tasks/:id` | Toggles task completion and invalidates cache |
+| `DELETE` | `/api/tasks/:id` | Deletes a task and invalidates cache |
 
 ---
 
@@ -154,7 +118,6 @@ Every API response returns:
 | `POSTGRES_PORT` | `5433` | Host port for PostgreSQL container |
 | `DATABASE_URL` | `postgres://taskforge:taskforge@localhost:5433/taskforge` | PostgreSQL connection string |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
-| `CONTAINER_NAME` | `os.hostname()` | Optional custom container identifier |
 
 ---
 
