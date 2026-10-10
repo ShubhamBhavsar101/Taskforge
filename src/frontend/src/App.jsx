@@ -11,31 +11,6 @@ export default function App() {
   const [healthStatus, setHealthStatus] = useState('ok');
   const [loading, setLoading] = useState(false);
   const [infraLoading, setInfraLoading] = useState(false);
-  const [routingLogs, setRoutingLogs] = useState([]);
-
-  // Record a trace log from response headers
-  const recordTrace = useCallback((action, method, res, startTime) => {
-    const elapsed = Date.now() - startTime;
-    const webContainer = res.headers.get('X-Served-By-Web') || 'taskforge-web-1';
-    const dbContainer = res.headers.get('X-Served-By-DB') || 'taskforge-postgres-1';
-    const redisContainer = res.headers.get('X-Served-By-Redis') || 'taskforge-redis-1';
-    const cacheHit = res.headers.get('X-Cache');
-    const respTime = res.headers.get('X-Response-Time') || `${elapsed}ms`;
-
-    const newLog = {
-      id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      action,
-      method,
-      webContainer,
-      dbContainer,
-      redisContainer,
-      cacheHit,
-      duration: respTime,
-      timestamp: new Date().toLocaleTimeString(),
-    };
-
-    setRoutingLogs((prev) => [newLog, ...prev.slice(0, 7)]);
-  }, []);
 
   // Fetch infra details
   const fetchInfra = useCallback(async () => {
@@ -55,21 +30,19 @@ export default function App() {
 
   // Fetch tasks
   const fetchTasks = useCallback(async (isInitial = false) => {
-    const start = Date.now();
     try {
       if (isInitial) setLoading(true);
       const res = await fetch(`${API_BASE}/tasks`);
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
-        recordTrace('Fetch Tasks', 'GET', res, start);
       }
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [recordTrace]);
+  }, []);
 
   // Health check
   const checkHealth = useCallback(async () => {
@@ -84,7 +57,6 @@ export default function App() {
 
   // Add task
   const handleAddTask = async (title, priority) => {
-    const start = Date.now();
     try {
       const res = await fetch(`${API_BASE}/tasks`, {
         method: 'POST',
@@ -92,7 +64,6 @@ export default function App() {
         body: JSON.stringify({ title, priority }),
       });
       if (res.ok) {
-        recordTrace('Create Task', 'POST', res, start);
         await fetchTasks();
         await fetchInfra();
       }
@@ -103,13 +74,11 @@ export default function App() {
 
   // Toggle task
   const handleToggleTask = async (id) => {
-    const start = Date.now();
     try {
       const res = await fetch(`${API_BASE}/tasks/${id}`, {
         method: 'PATCH',
       });
       if (res.ok) {
-        recordTrace(`Toggle #${id}`, 'PATCH', res, start);
         await fetchTasks();
         await fetchInfra();
       }
@@ -120,13 +89,11 @@ export default function App() {
 
   // Delete task
   const handleDeleteTask = async (id) => {
-    const start = Date.now();
     try {
       const res = await fetch(`${API_BASE}/tasks/${id}`, {
         method: 'DELETE',
       });
       if (res.ok) {
-        recordTrace(`Delete #${id}`, 'DELETE', res, start);
         await fetchTasks();
         await fetchInfra();
       }
@@ -172,12 +139,11 @@ export default function App() {
       </header>
 
       <main className="app-container">
-        {/* Left Column: Infrastructure and Container Details */}
+        {/* Left Column: Simple Running Containers Panel */}
         <InfraPanel
           infra={infra}
           loading={infraLoading}
           onRefresh={fetchInfra}
-          routingLogs={routingLogs}
         />
 
         {/* Right Column: Task Management App */}
