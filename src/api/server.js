@@ -51,10 +51,13 @@ const dbConfig = parseHostFromUrl(DATABASE_URL, "5432");
 const redisConfig = parseHostFromUrl(REDIS_URL, "6379");
 
 function getWebContainer() {
-  const containerId =
+  const raw =
     process.env.CONTAINER_NAME ||
     process.env.HOSTNAME ||
     os.hostname();
+  const containerId =
+    process.env.CONTAINER_NAME ||
+    (/^[0-9a-f]{12}$/i.test(raw) ? "taskforge-web-1" : raw);
   return {
     container: containerId,
     hostname: os.hostname(),
