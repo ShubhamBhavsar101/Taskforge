@@ -90,27 +90,25 @@ export default function App() {
 
   return (
     <>
-      <header className="app-header">
-        <div className="header-inner">
-          <div className="logo-group">
-            <div className="logo-badge">TF</div>
-            <h1 className="brand-title">
-              Task<span>Forge</span>
-            </h1>
+      <header className="forge-header">
+        <div className="forge-header-inner">
+          <div className="brand-stamp">
+            <div className="stamp-mark">TF</div>
+            <h1 className="brand-title">TaskForge</h1>
           </div>
 
-          <div className="header-status-pill">
+          <div className="header-status">
             <div
-              className={`live-pulse ${healthStatus === 'ok' ? '' : 'error'}`}
+              className={`status-beacon ${healthStatus === 'ok' ? '' : 'error'}`}
             />
             <span>
-              {healthStatus === 'ok' ? 'Online' : 'Offline'}
+              {healthStatus === 'ok' ? 'Cluster Active' : 'Cluster Offline'}
             </span>
           </div>
         </div>
       </header>
 
-      <main className="app-container">
+      <main className="forge-workspace">
         <TaskManager
           tasks={tasks}
           loading={loading}
