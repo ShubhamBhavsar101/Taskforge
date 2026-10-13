@@ -22,7 +22,12 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
- 
+      
+      - name: DEBUG
+        run: |
+          echo "DEBUG: DOCKER_USERNAME=${{ vars.DOCKER_USERNAME }}"
+          echo "DEBUG: DOCKER_PAT_TOKEN=${{ secrets.DOCKER_PAT_TOKEN }}"
+          
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
