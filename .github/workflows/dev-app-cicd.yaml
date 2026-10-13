@@ -42,4 +42,18 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ vars.DOCKER_USERNAME }}/taskforge:latest
+
+  deploy:
+    needs: build
+    name: Deploy to Local Kind Cluster
+    runs-on: infra-dev
+    environment:
+      name: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: DEBUG
+        run: pwd
+          
     
