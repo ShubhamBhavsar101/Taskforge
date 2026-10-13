@@ -36,7 +36,7 @@ jobs:
           password: ${{ secrets.DOCKER_PAT_TOKEN }}
       
       - name: Build and push the Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6 
         with:
           context: .
           file: Dockerfile
@@ -60,6 +60,7 @@ jobs:
       name: dev
     env:
       DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
