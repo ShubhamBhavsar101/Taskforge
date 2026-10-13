@@ -1,25 +1,18 @@
-# Stage 1: Build React Frontend
 FROM node:20-alpine AS frontend-builder
-WORKDIR /app/frontend
+WORKDIR /app
 COPY src/frontend/package*.json ./
 RUN npm install
 COPY src/frontend ./
 RUN npm run build
 
-# Stage 2: Production API & Static Server
-FROM node:20-alpine
+FROM node:20-alpine AS runtime
 WORKDIR /app
+COPY src/api/package*.json ./
+RUN npm install --omit=dev
 
-# Install API production dependencies
-COPY src/api/package*.json ./api/
-RUN cd ./api && npm install --omit=dev
-
-# Copy API server and frontend built dist
+COPY --from=frontend-builder /app/dist ./frontend/dist
 COPY src/api ./api
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 WORKDIR /app/api
-ENV PORT=3000
 EXPOSE 3000
-
 CMD ["node", "server.js"]

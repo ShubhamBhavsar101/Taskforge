@@ -1,29 +1,29 @@
 services:
-  web:
+  frontend:
     build: .
     container_name: taskforge-web-1
     environment:
       - PORT=3000
-      - DATABASE_URL=postgres://taskforge:taskforge@postgres:5432/taskforge
+      - DATABASE_URL=postgres://taskforge:${POSTGRES_PASSWORD}@postgres:5432/taskforge
       - REDIS_URL=redis://redis:6379
     ports:
-      - "3000:3000"
+      - 3000:3000
     depends_on:
       - postgres
       - redis
-
+    
   postgres:
     image: postgres:16-alpine
     container_name: taskforge-postgres-1
-    environment:
-      POSTGRES_DB: taskforge
-      POSTGRES_USER: taskforge
-      POSTGRES_PASSWORD: taskforge
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      - POSTGRES_DB=taskforge
+      - POSTGRES_USER=taskforge
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 
   redis:
     image: redis:7-alpine
