@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskforge-web
+  namespace: taskforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskforge-web
+  template:
+    metadata:
+      labels:
+        app: taskforge-web
+    spec:
+      containers:
+        - name: web
+          image: shubhszone/taskforge:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: taskforge-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: taskforge-secrets
+                  key: REDIS_URL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskforge-web
+  namespace: taskforge
+spec:
+  selector:
+    app: taskforge-web
+  ports:
+    - port: 3000
+      targetPort: 3000

@@ -67,12 +67,17 @@ jobs:
         uses: actions/checkout@v6
         with:
           clean: true
-
-      - name: DEBUG
-        run: pwd
-      
-      - name: Docker Compose test
-        run: docker compose up -d
+      - name: Deploy to Kubernetes
+        run: |
+          # 1. Apply all Kubernetes manifests
+          kubectl apply -f k8s/
+          # 2. Trigger a rollout restart so the deployment pulls the new image
+          kubectl rollout restart deployment/taskforge-web -n taskforge
+          # 3. Wait for the new pods to become Ready
+          kubectl rollout status deployment/taskforge-web -n taskforge --timeout=120s
+      - name: Verify Deployment Status
+        run: |
+          kubectl get pods,services -n taskforge
 
           
     
