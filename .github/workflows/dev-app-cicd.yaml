@@ -41,5 +41,5 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: ghcr.io/${{ vars.DOCKER_USERNAME }}/taskforge:latest
+          tags: ${{ vars.DOCKER_USERNAME }}/taskforge:latest
     
