@@ -1,6 +1,6 @@
 services:
   frontend:
-    build: .
+    image: ${DOCKER_USERNAME}/taskforge:latest
     container_name: taskforge-web-1
     environment:
       - PORT=3000
