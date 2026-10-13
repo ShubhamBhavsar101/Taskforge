@@ -53,7 +53,7 @@ jobs:
         run: echo "This is Approved"
 
   deploy:
-    needs: build
+    needs: approval
     name: Deploy to Local Kind Cluster
     runs-on: infra-dev
     environment:
