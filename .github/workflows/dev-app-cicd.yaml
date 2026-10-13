@@ -42,6 +42,15 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ vars.DOCKER_USERNAME }}/taskforge:latest
+  
+  approval:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: approval-env
+    steps:
+      - name: Manual Approval
+        run: echo "This is Approved"
 
   deploy:
     needs: build
@@ -61,7 +70,7 @@ jobs:
         run: pwd
       
       - name: Docker Compose test
-        run: docker compose up
+        run: docker compose up -d
 
           
     
