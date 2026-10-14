@@ -41,10 +41,28 @@ jobs:
           file: Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ vars.DOCKER_USERNAME }}/taskforge:latest
+          tags: |
+            ${{ vars.DOCKER_USERNAME }}/taskforge:${{ github.sha }}
+            ${{ vars.DOCKER_USERNAME }}/taskforge:latest
   
-  approval:
+  kustomize-plan:
+    name: Kustomize Plan (Dry Run)
     needs: build
+    runs-on: infra-dev
+    environment: 
+      name: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Preview Manifests
+        run: |
+          echo "=== Previewing Dev Manifests ==="
+          kubectl kustomize k8s/overlays/dev
+
+  approval:
+    name: Dev Approval
+    needs: kustomize-plan
     runs-on: ubuntu-latest
     environment:
       name: approval-env
