@@ -9,8 +9,3 @@ resources:
 
 generatorOptions:
   disableNameSuffixHash: true
-
-secretGenerator:
-  - name: taskforge-secrets
-    envs:
-      - secrets.env
