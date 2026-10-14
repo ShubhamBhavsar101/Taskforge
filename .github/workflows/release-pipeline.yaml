@@ -49,9 +49,11 @@ jobs:
       # Automated Semantic Release with GitHub Releases and Changelogs
       - name: Run Semantic Release
         id: semantic
-        if: ${{ github.event.inputs.manual_version == '' && github.event_name != 'pull_request' }}
+        if: ${{ github.event.inputs.manual_version == '' }}
         uses: cycjimmy/semantic-release-action@v4
         with:
+          dry_run: ${{ github.event_name == 'pull_request' }}
+          ci: false
           extra_plugins: |
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
@@ -74,8 +76,12 @@ jobs:
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "Target Version (Automated SemVer): ${TAG}"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha || github.sha }}" | cut -c1-7)
-            TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
+            if [ -n "${{ steps.semantic.outputs.new_release_version }}" ]; then
+              TAG="v${{ steps.semantic.outputs.new_release_version }}"
+            else
+              SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha || github.sha }}" | cut -c1-7)
+              TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
+            fi
             echo "version=${TAG}" >> $GITHUB_OUTPUT
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "PR Testing Target Version: ${TAG}"
