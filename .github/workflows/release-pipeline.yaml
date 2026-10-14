@@ -15,7 +15,7 @@ on:
         description: 'Optional manual SemVer tag (e.g. v1.0.1). Leave empty for automated semantic-release calculation.'
         required: false
         default: ''
-
+ 
 permissions:
   contents: write
   packages: write
