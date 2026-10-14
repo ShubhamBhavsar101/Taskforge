@@ -9,6 +9,14 @@ on:
       - 'k8s/**'
       - 'Dockerfile'
       - '.github/workflows/release-pipeline.yaml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'k8s/**'
+      - 'Dockerfile'
+      - '.github/workflows/release-pipeline.yaml'
   workflow_dispatch:
     inputs:
       manual_version:
@@ -41,7 +49,7 @@ jobs:
       # Automated Semantic Release with GitHub Releases and Changelogs
       - name: Run Semantic Release
         id: semantic
-        if: ${{ github.event.inputs.manual_version == '' }}
+        if: ${{ github.event.inputs.manual_version == '' && github.event_name != 'pull_request' }}
         uses: cycjimmy/semantic-release-action@v4
         with:
           extra_plugins: |
@@ -51,7 +59,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Determine if a release was cut or manual version provided
+      # Determine if a release was cut, manual version provided, or PR test run
       - name: Resolve Version
         id: version_step
         run: |
@@ -65,6 +73,12 @@ jobs:
             echo "version=${TAG}" >> $GITHUB_OUTPUT
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "Target Version (Automated SemVer): ${TAG}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha || github.sha }}" | cut -c1-7)
+            TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
+            echo "version=${TAG}" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "PR Testing Target Version: ${TAG}"
           else
             echo "No new release published by semantic-release (no relevant conventional commits)."
             echo "should_deploy=false" >> $GITHUB_OUTPUT
