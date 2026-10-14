@@ -22,6 +22,8 @@ jobs:
   build:
     name: Build Dev Image with Suffix
     runs-on: ubuntu-latest
+    environment:
+      name: dev 
     outputs:
       version: ${{ steps.version_step.outputs.version }}
     steps:
