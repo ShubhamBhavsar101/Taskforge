@@ -9,18 +9,10 @@ on:
       - 'k8s/**'
       - 'Dockerfile'
       - '.github/workflows/release-pipeline.yaml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'k8s/**'
-      - 'Dockerfile'
-      - '.github/workflows/release-pipeline.yaml'
   workflow_dispatch:
     inputs:
       manual_version:
-        description: 'Optional manual SemVer tag (e.g. v1.2.0). Leave empty for automated conventional commit calculation.'
+        description: 'Optional manual SemVer tag (e.g. v1.0.1). Leave empty for automated semantic-release calculation.'
         required: false
         default: ''
 
@@ -32,7 +24,7 @@ permissions:
 
 jobs:
   # =========================================================================
-  # STAGE 1: Calculate Automated SemVer via cycjimmy & Build Artifact ONCE
+  # STAGE 1: Calculate Official SemVer via cycjimmy & Build Artifact ONCE
   # =========================================================================
   build-and-release:
     name: Build Once & SemVer Release
@@ -46,14 +38,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Automated Semantic Release with GitHub Releases and Changelogs
+      # Official Semantic Release on main (tags Git, generates GitHub Release & Changelog)
       - name: Run Semantic Release
         id: semantic
         if: ${{ github.event.inputs.manual_version == '' }}
         uses: cycjimmy/semantic-release-action@v4
         with:
-          dry_run: ${{ github.event_name == 'pull_request' }}
-          ci: false
           extra_plugins: |
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
@@ -61,7 +51,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Determine if a release was cut, manual version provided, or PR test run
+      # Determine the resolved release version
       - name: Resolve Version
         id: version_step
         run: |
@@ -75,16 +65,6 @@ jobs:
             echo "version=${TAG}" >> $GITHUB_OUTPUT
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "Target Version (Automated SemVer): ${TAG}"
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            if [ -n "${{ steps.semantic.outputs.new_release_version }}" ]; then
-              TAG="v${{ steps.semantic.outputs.new_release_version }}"
-            else
-              SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha || github.sha }}" | cut -c1-7)
-              TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
-            fi
-            echo "version=${TAG}" >> $GITHUB_OUTPUT
-            echo "should_deploy=true" >> $GITHUB_OUTPUT
-            echo "PR Testing Target Version: ${TAG}"
           else
             echo "No new release published by semantic-release (no relevant conventional commits)."
             echo "should_deploy=false" >> $GITHUB_OUTPUT
@@ -105,7 +85,7 @@ jobs:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PAT_TOKEN }}
 
-      # Build and push the immutable container image ONCE
+      # Build and push the immutable container image ONCE with official SemVer
       - name: Build and Push Docker Image
         if: steps.version_step.outputs.should_deploy == 'true'
         uses: docker/build-push-action@v5
@@ -118,7 +98,7 @@ jobs:
             ${{ vars.DOCKER_USERNAME }}/taskforge:${{ steps.version_step.outputs.version }}
 
   # =========================================================================
-  # STAGE 2: Dev Plan, Approval, and Deployment
+  # STAGE 2: Dev Manifest Preview, Approval, and Deployment
   # =========================================================================
   dev-plan:
     name: Dev Kustomize Plan (Dry Run)
@@ -193,7 +173,7 @@ jobs:
           kubectl get pods,services -n ${{ env.NAMESPACE }}
 
   # =========================================================================
-  # STAGE 3: Prod Plan, Approval, and Promotion (EXACT SAME Artifact)
+  # STAGE 3: Prod Manifest Preview, Approval, and Promotion (EXACT SAME Artifact)
   # =========================================================================
   prod-plan:
     name: Prod Kustomize Plan (Dry Run)

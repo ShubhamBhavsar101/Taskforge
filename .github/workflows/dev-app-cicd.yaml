@@ -1,4 +1,4 @@
-name: App PR Validation
+name: Dev Pipeline | PR Build & Deploy
 
 on:
   pull_request:
@@ -6,42 +6,145 @@ on:
       - main
     paths:
       - 'src/**'
-      - 'Dockerfile'
       - 'k8s/**'
+      - 'Dockerfile'
+      - '.github/workflows/dev-app-cicd.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  validate-build:
-    name: Build & Test (Dry Run)
+  # =========================================================================
+  # STAGE 1: Calculate SemVer with suffix & Build Dev Image
+  # =========================================================================
+  build:
+    name: Build Dev Image with Suffix
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version_step.outputs.version }}
     steps:
-      - name: Checkout
+      - name: Checkout Code with Full History
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Calculate next semantic version from git commit messages
+      - name: Calculate Base Semantic Version
+        id: semver
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "BREAKING CHANGE:|feat!:"
+          minor_pattern: "feat:"
+          version_format: "${major}.${minor}.${patch}"
+
+      # Append -build-<short_commithash> suffix
+      - name: Construct Version with Build Suffix
+        id: version_step
+        run: |
+          SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha || github.sha }}" | cut -c1-7)
+          BASE_VERSION="${{ steps.semver.outputs.version_tag }}"
+          DEV_VERSION="${BASE_VERSION}-build-${SHORT_SHA}"
+          echo "version=${DEV_VERSION}" >> $GITHUB_OUTPUT
+          echo "Generated Dev Version: ${DEV_VERSION}"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Verify the Dockerfile builds cleanly without pushing to registry
-      - name: Test Docker Build
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PAT_TOKEN }}
+
+      - name: Build and Push Dev Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile
-          push: false
-          tags: taskforge:test
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ vars.DOCKER_USERNAME }}/taskforge:${{ steps.version_step.outputs.version }}
 
-  validate-manifests:
-    name: Validate K8s Manifests
-    runs-on: ubuntu-latest
+  # =========================================================================
+  # STAGE 2: Dev Manifest Preview & Approval Gate
+  # =========================================================================
+  dev-plan:
+    name: Dev Kustomize Plan (Dry Run)
+    needs: build
+    runs-on: infra
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          clean: true
 
-      - name: Test Dev Kustomize Build
+      - name: Preview Dev Manifests with Suffix Version
         run: |
-          kubectl kustomize k8s/overlays/dev > /dev/null
-          echo "Dev overlays build cleanly."
+          echo "=== Previewing Dev Manifests for ${{ needs.build.outputs.version }} ==="
+          cd k8s/overlays/dev
+          kustomize edit set image taskforge=${{ vars.DOCKER_USERNAME }}/taskforge:${{ needs.build.outputs.version }}
+          kubectl kustomize .
 
-      - name: Test Prod Kustomize Build
+  dev-approval:
+    name: Dev Deployment Approval Gate
+    needs: [build, dev-plan]
+    runs-on: ubuntu-latest
+    environment:
+      name: approval-env
+    steps:
+      - name: Dev Deployment Approved
         run: |
-          kubectl kustomize k8s/overlays/prod > /dev/null
-          echo "Prod overlays build cleanly."
+          echo "Approved deployment of version ${{ needs.build.outputs.version }} to Dev."
+
+  # =========================================================================
+  # STAGE 3: Deploy to Dev Environment
+  # =========================================================================
+  deploy-dev:
+    name: Deploy to Dev
+    needs: [build, dev-approval]
+    runs-on: infra
+    environment:
+      name: dev
+    env:
+      NAMESPACE: taskforge-dev
+      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      TARGET_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Ensure Dev Namespace Exists
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Inject Kubernetes Secrets
+        run: |
+          kubectl create secret generic taskforge-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=POSTGRES_PASSWORD="${{ env.POSTGRES_PASSWORD }}" \
+            --from-literal=DATABASE_URL="postgres://taskforge:${{ env.POSTGRES_PASSWORD }}@postgres:5432/taskforge" \
+            --from-literal=REDIS_URL="redis://redis:6379" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Set Dev Overlay Image Tag to Suffix Version
+        run: |
+          cd k8s/overlays/dev
+          kustomize edit set image taskforge=${{ env.DOCKER_USERNAME }}/taskforge:${{ env.TARGET_VERSION }}
+
+      - name: Deploy to Dev
+        run: |
+          kubectl apply -k k8s/overlays/dev
+
+      - name: Verify Dev Rollout
+        run: |
+          kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl get pods,services -n ${{ env.NAMESPACE }}
