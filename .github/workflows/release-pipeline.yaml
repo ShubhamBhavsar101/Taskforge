@@ -36,7 +36,7 @@ jobs:
       should_deploy: ${{ steps.version_step.outputs.should_deploy }}
     steps:
       - name: Checkout Code with Full Git History
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -109,7 +109,7 @@ jobs:
     runs-on: infra
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           clean: true
 
@@ -144,7 +144,7 @@ jobs:
       TARGET_VERSION: ${{ needs.build-and-release.outputs.version }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           clean: true
 
@@ -176,16 +176,94 @@ jobs:
           kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
           kubectl get pods,services -n ${{ env.NAMESPACE }}
 
+  staging-plan:
+    name: Staging Kustomize Plan (Dry Run)
+    needs: [build-and-release, deploy-dev]
+    runs-on: infra
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          clean: true
+
+      - name: Preview Staging Manifests with Version
+        run: |
+          echo "=== Previewing Staging Manifests for ${{ needs.build-and-release.outputs.version }} ==="
+          cd k8s/overlays/staging
+          kustomize edit set image taskforge=${{ vars.DOCKER_USERNAME }}/taskforge:${{ needs.build-and-release.outputs.version }}
+          kubectl kustomize .
+
+  staging-approval:
+    name: Staging Promotion Approval Gate
+    needs: [build-and-release, staging-plan]
+    runs-on: ubuntu-latest
+    environment:
+      name: approval-env
+    steps:
+      - name: Staging Promotion Approved
+        run: |
+          echo "Approved promotion of version ${{ needs.build-and-release.outputs.version }} to Staging."
+
+  deploy-staging:
+    name: Promote to Staging
+    needs: [build-and-release, staging-approval]
+    runs-on: infra
+    environment:
+      name: staging
+    env:
+      NAMESPACE: taskforge-staging
+      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      TARGET_VERSION: ${{ needs.build-and-release.outputs.version }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          clean: true
+
+      - name: Ensure Staging Namespace Exists
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Inject Kubernetes Secrets
+        run: |
+          kubectl create secret generic taskforge-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=POSTGRES_PASSWORD="${{ env.POSTGRES_PASSWORD }}" \
+            --from-literal=DATABASE_URL="postgres://taskforge:${{ env.POSTGRES_PASSWORD }}@postgres:5432/taskforge" \
+            --from-literal=REDIS_URL="redis://redis:6379" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Set Staging Overlay Image Tag to EXACT Same SemVer
+        run: |
+          cd k8s/overlays/staging
+          kustomize edit set image taskforge=${{ env.DOCKER_USERNAME }}/taskforge:${{ env.TARGET_VERSION }}
+
+      - name: Deploy to Staging
+        run: |
+          kubectl apply -k k8s/overlays/staging
+          kubectl rollout restart deployment/postgres -n ${{ env.NAMESPACE }}
+
+      - name: Verify Staging Rollout with Automatic Rollback
+        run: |
+          kubectl rollout status deployment/postgres -n ${{ env.NAMESPACE }} --timeout=60s
+          kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=180s || {
+            echo "Staging deployment failed! Rolling back to previous revision..."
+            kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
+            exit 1
+          }
+          kubectl get pods,services -n ${{ env.NAMESPACE }}
+
+
   # =========================================================================
   # STAGE 3: Prod Manifest Preview, Approval, and Promotion (EXACT SAME Artifact)
   # =========================================================================
   prod-plan:
     name: Prod Kustomize Plan (Dry Run)
-    needs: [build-and-release, deploy-dev]
+    needs: [build-and-release, deploy-staging]
     runs-on: infra
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           clean: true
 
@@ -220,7 +298,7 @@ jobs:
       TARGET_VERSION: ${{ needs.build-and-release.outputs.version }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           clean: true
 
