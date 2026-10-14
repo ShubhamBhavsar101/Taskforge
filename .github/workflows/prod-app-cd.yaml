@@ -8,7 +8,7 @@ on:
 jobs:
   plan:
     name: Kustomize Plan
-    runs-on: infra-dev
+    runs-on: infra
     environment:
       name: prod
     env:
@@ -42,7 +42,7 @@ jobs:
 
   deploy:
     name: Deploy to Production Kind Cluster
-    runs-on: infra-dev
+    runs-on: infra
     needs: approval
     environment:
       name: prod
