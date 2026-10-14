@@ -1,110 +1,47 @@
-name: App Build | Dev
+name: App PR Validation
+
 on:
-  workflow_dispatch:
   pull_request:
     branches:
       - main
     paths:
-      - src/**
+      - 'src/**'
+      - 'Dockerfile'
+      - 'k8s/**'
 
 jobs:
-  build:
-    name: Build
+  validate-build:
+    name: Build & Test (Dry Run)
     runs-on: ubuntu-latest
-    environment: 
-      name: dev
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
-      - name: DEBUG
-        run: |
-          echo "DEBUG: DOCKER_USERNAME=${{ vars.DOCKER_USERNAME }}"
-          echo "DEBUG: DOCKER_PAT_TOKEN=${{ secrets.DOCKER_PAT_TOKEN }}"
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          username: ${{ vars.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PAT_TOKEN }}
-      
-      - name: Build and push the Docker image
-        uses: docker/build-push-action@v6 
+      # Verify the Dockerfile builds cleanly without pushing to registry
+      - name: Test Docker Build
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ vars.DOCKER_USERNAME }}/taskforge:${{ github.sha }}
-            ${{ vars.DOCKER_USERNAME }}/taskforge:latest
-  
-  kustomize-plan:
-    name: Kustomize Plan (Dry Run)
-    needs: build
-    runs-on: infra
-    environment: 
-      name: dev
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+          push: false
+          tags: taskforge:test
 
-      - name: Preview Manifests
-        run: |
-          echo "=== Previewing Dev Manifests ==="
-          kubectl kustomize k8s/overlays/dev
-
-  approval:
-    name: Dev Approval
-    needs: kustomize-plan
+  validate-manifests:
+    name: Validate K8s Manifests
     runs-on: ubuntu-latest
-    environment:
-      name: approval-env
-    steps:
-      - name: Manual Approval
-        run: echo "This is Approved"
-
-  deploy:
-    needs: approval
-    name: Deploy to Local Kind Cluster
-    runs-on: infra
-    environment:
-      name: dev
-    env:
-      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      NAMESPACE: taskforge-dev
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          clean: true
-      
-      - name: Create Namespace
-        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+        uses: actions/checkout@v4
 
-      - name: Inject Kubernetes Secrets
+      - name: Test Dev Kustomize Build
         run: |
-          kubectl create secret generic taskforge-secrets \
-            --namespace=${{ env.NAMESPACE }} \
-            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
-            --from-literal=DATABASE_URL="postgres://taskforge:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/taskforge" \
-            --from-literal=REDIS_URL="redis://redis:6379" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl kustomize k8s/overlays/dev > /dev/null
+          echo "Dev overlays build cleanly."
 
-      - name: Deploy to Kubernetes
+      - name: Test Prod Kustomize Build
         run: |
-          kubectl apply -k k8s/overlays/dev
-
-      - name: Verify Deployment Status
-        run: |
-          kubectl get pods,services -n taskforge-dev
-
-          
-    
+          kubectl kustomize k8s/overlays/prod > /dev/null
+          echo "Prod overlays build cleanly."

@@ -10,5 +10,10 @@ resources:
 patches:
   - path: replicas.yaml
 
+images:
+  - name: taskforge
+    newName: shubhszone/taskforge
+    newTag: v1.0.0
+
 generatorOptions:
   disableNameSuffixHash: true
