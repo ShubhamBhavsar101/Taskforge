@@ -33,13 +33,19 @@ if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendStatic));
 }
 
-// --- Health Check ---
+// --- Liveness Probe (process is alive) ---
+app.get("/api/live", (_req, res) => {
+  res.json({ status: "alive" });
+});
+
+// --- Readiness Probe (dependencies are connected) ---
 app.get("/api/health", async (_req, res) => {
   try {
     await db.query("SELECT 1");
     await redis.ping();
     res.json({ status: "ok", db: "ok", redis: "ok" });
   } catch (err) {
+    console.error("[HealthCheck Error]:", err.message);
     res.status(500).json({ status: "error", message: err.message });
   }
 });
