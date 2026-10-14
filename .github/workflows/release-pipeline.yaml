@@ -168,11 +168,10 @@ jobs:
       - name: Deploy to Dev
         run: |
           kubectl apply -k k8s/overlays/dev
-          kubectl rollout restart deployment/postgres -n ${{ env.NAMESPACE }}
 
       - name: Verify Dev Rollout
         run: |
-          kubectl rollout status deployment/postgres -n ${{ env.NAMESPACE }} --timeout=60s
+          kubectl rollout status statefulset/postgres -n ${{ env.NAMESPACE }} --timeout=60s
           kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
           kubectl get pods,services -n ${{ env.NAMESPACE }}
 
@@ -241,11 +240,10 @@ jobs:
       - name: Deploy to Staging
         run: |
           kubectl apply -k k8s/overlays/staging
-          kubectl rollout restart deployment/postgres -n ${{ env.NAMESPACE }}
 
       - name: Verify Staging Rollout with Automatic Rollback
         run: |
-          kubectl rollout status deployment/postgres -n ${{ env.NAMESPACE }} --timeout=60s
+          kubectl rollout status statefulset/postgres -n ${{ env.NAMESPACE }} --timeout=60s
           kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=180s || {
             echo "Staging deployment failed! Rolling back to previous revision..."
             kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
@@ -322,11 +320,10 @@ jobs:
       - name: Deploy to Production
         run: |
           kubectl apply -k k8s/overlays/prod
-          kubectl rollout restart deployment/postgres -n ${{ env.NAMESPACE }}
 
       - name: Verify Prod Rollout with Automatic Rollback
         run: |
-          kubectl rollout status deployment/postgres -n ${{ env.NAMESPACE }} --timeout=60s
+          kubectl rollout status statefulset/postgres -n ${{ env.NAMESPACE }} --timeout=60s
           kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=180s || {
             echo "Production deployment failed! Rolling back to previous revision..."
             kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
