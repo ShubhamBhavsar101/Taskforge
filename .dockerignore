@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.github
+.gitignore
+.env
+.env.*
+k8s
+README.md
+Requirements-from-app-team.md
+docker-compose.yaml
