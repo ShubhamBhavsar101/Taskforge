@@ -20,7 +20,7 @@ jobs:
   # STAGE 1: Calculate SemVer with suffix & Build Dev Image
   # =========================================================================
   build:
-    name: Build Dev Image with Suffix
+    name: Build and Push Dev Image with Suffix
     runs-on: ubuntu-latest
     environment:
       name: dev 
