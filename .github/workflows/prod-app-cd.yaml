@@ -6,9 +6,25 @@ jobs:
   plan:
     name: Kustomize Plan
     runs-on: infra-dev
+    environment:
+      name: prod
+    env:
+      NAMESPACE: taskforge-prod
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Create Namespace
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Inject Kubernetes Secrets
+        run: |
+          kubectl create secret generic taskforge-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=DATABASE_URL="postgres://taskforge:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/taskforge" \
+            --from-literal=REDIS_URL="redis://redis:6379" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Kustomize Plan
         run: kubectl kustomize k8s/overlays/prod
@@ -25,17 +41,22 @@ jobs:
     name: Deploy to Production Kind Cluster
     runs-on: infra-dev
     needs: approval
+    environment:
+      name: prod
+    env:
+      NAMESPACE: taskforge-prod
+      
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Create Namespace
-        run: kubectl create namespace taskforge-prod --dry-run=client -o yaml | kubectl apply -f -
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Inject Kubernetes Secrets
         run: |
           kubectl create secret generic taskforge-secrets \
-            --namespace=taskforge-prod \
+            --namespace=${{ env.NAMESPACE }} \
             --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
             --from-literal=DATABASE_URL="postgres://taskforge:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/taskforge" \
             --from-literal=REDIS_URL="redis://redis:6379" \
