@@ -283,7 +283,7 @@ jobs:
         run: |
           echo "Approved promotion of version ${{ needs.build-and-release.outputs.version }} to Production."
 
-  deploy-prod: 
+  deploy-prod:  
     name: "🚀 Prod: Promote to Production"
     needs: [build-and-release, prod-approval]
     runs-on: infra
