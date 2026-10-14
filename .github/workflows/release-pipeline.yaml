@@ -103,7 +103,7 @@ jobs:
   # STAGE 2: Dev Manifest Preview, Approval, and Deployment
   # =========================================================================
   dev-plan:
-    name: Dev Kustomize Plan (Dry Run)
+    name: "🧪 Dev: Kustomize Plan (Dry Run)"
     needs: build-and-release
     if: needs.build-and-release.outputs.should_deploy == 'true'
     runs-on: infra
@@ -121,7 +121,7 @@ jobs:
           kubectl kustomize .
 
   dev-approval:
-    name: Dev Deployment Approval Gate
+    name: "🧪 Dev: Deployment Approval Gate"
     needs: [build-and-release, dev-plan]
     runs-on: ubuntu-latest
     environment:
@@ -132,7 +132,7 @@ jobs:
           echo "Approved deployment of version ${{ needs.build-and-release.outputs.version }} to Dev."
 
   deploy-dev:
-    name: Deploy to Dev
+    name: "🧪 Dev: Deploy to Dev"
     needs: [build-and-release, dev-approval]
     runs-on: infra
     environment:
@@ -176,7 +176,7 @@ jobs:
           kubectl get pods,services -n ${{ env.NAMESPACE }}
 
   staging-plan:
-    name: Staging Kustomize Plan (Dry Run)
+    name: "🎯 Staging: Kustomize Plan (Dry Run)"
     needs: [build-and-release, deploy-dev]
     runs-on: infra
     steps:
@@ -193,7 +193,7 @@ jobs:
           kubectl kustomize .
 
   staging-approval:
-    name: Staging Promotion Approval Gate
+    name: "🎯 Staging: Promotion Approval Gate"
     needs: [build-and-release, staging-plan]
     runs-on: ubuntu-latest
     environment:
@@ -204,7 +204,7 @@ jobs:
           echo "Approved promotion of version ${{ needs.build-and-release.outputs.version }} to Staging."
 
   deploy-staging:
-    name: Promote to Staging
+    name: "🎯 Staging: Promote to Staging"
     needs: [build-and-release, staging-approval]
     runs-on: infra
     environment:
@@ -256,7 +256,7 @@ jobs:
   # STAGE 3: Prod Manifest Preview, Approval, and Promotion (EXACT SAME Artifact)
   # =========================================================================
   prod-plan:
-    name: Prod Kustomize Plan (Dry Run)
+    name: "🚀 Prod: Kustomize Plan (Dry Run)"
     needs: [build-and-release, deploy-staging]
     runs-on: infra
     steps:
@@ -273,7 +273,7 @@ jobs:
           kubectl kustomize .
 
   prod-approval:
-    name: Prod Promotion Approval Gate
+    name: "🚀 Prod: Promotion Approval Gate"
     needs: [build-and-release, prod-plan]
     runs-on: ubuntu-latest
     environment:
@@ -284,7 +284,7 @@ jobs:
           echo "Approved promotion of version ${{ needs.build-and-release.outputs.version }} to Production."
 
   deploy-prod:
-    name: Promote to Production
+    name: "🚀 Prod: Promote to Production"
     needs: [build-and-release, prod-approval]
     runs-on: infra
     environment:
