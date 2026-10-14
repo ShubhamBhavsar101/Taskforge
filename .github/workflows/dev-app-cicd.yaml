@@ -26,6 +26,7 @@ jobs:
       name: dev 
     outputs:
       version: ${{ steps.version_step.outputs.version }}
+      docker_username: ${{ vars.DOCKER_USERNAME || 'shubhszone' }}
     steps:
       - name: Checkout Code with Full History
         uses: actions/checkout@v4
@@ -53,26 +54,26 @@ jobs:
           echo "Generated Dev Version: ${DEV_VERSION}"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PAT_TOKEN }}
 
       - name: Build and Push Dev Docker Image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ vars.DOCKER_USERNAME }}/taskforge:${{ steps.version_step.outputs.version }}
+            ${{ vars.DOCKER_USERNAME || 'shubhszone' }}/taskforge:${{ steps.version_step.outputs.version }}
 
   # =========================================================================
   # STAGE 2: Dev Manifest Preview & Approval Gate
@@ -81,6 +82,8 @@ jobs:
     name: Dev Kustomize Plan (Dry Run)
     needs: build
     runs-on: infra
+    environment:
+      name: dev
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -89,9 +92,10 @@ jobs:
 
       - name: Preview Dev Manifests with Suffix Version
         run: |
+          DOCKER_USER="${{ vars.DOCKER_USERNAME || needs.build.outputs.docker_username || 'shubhszone' }}"
           echo "=== Previewing Dev Manifests for ${{ needs.build.outputs.version }} ==="
           cd k8s/overlays/dev
-          kustomize edit set image taskforge=${{ vars.DOCKER_USERNAME }}/taskforge:${{ needs.build.outputs.version }}
+          kustomize edit set image taskforge=${DOCKER_USER}/taskforge:${{ needs.build.outputs.version }}
           kubectl kustomize .
 
   dev-approval:
@@ -116,7 +120,7 @@ jobs:
       name: dev
     env:
       NAMESPACE: taskforge-dev
-      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME || 'shubhszone' }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       TARGET_VERSION: ${{ needs.build.outputs.version }}
     steps:
@@ -139,8 +143,9 @@ jobs:
 
       - name: Set Dev Overlay Image Tag to Suffix Version
         run: |
+          DOCKER_USER="${{ env.DOCKER_USERNAME || needs.build.outputs.docker_username || 'shubhszone' }}"
           cd k8s/overlays/dev
-          kustomize edit set image taskforge=${{ env.DOCKER_USERNAME }}/taskforge:${{ env.TARGET_VERSION }}
+          kustomize edit set image taskforge=${DOCKER_USER}/taskforge:${{ env.TARGET_VERSION }}
 
       - name: Deploy to Dev
         run: |
