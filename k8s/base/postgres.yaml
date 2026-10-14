@@ -29,6 +29,17 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5432
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    until pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h /var/run/postgresql; do
+                      sleep 1;
+                    done;
+                    psql -h /var/run/postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER USER \"$POSTGRES_USER\" WITH PASSWORD '$POSTGRES_PASSWORD';"
           env:
             - name: POSTGRES_DB
               value: "taskforge"

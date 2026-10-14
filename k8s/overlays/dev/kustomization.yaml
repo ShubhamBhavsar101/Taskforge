@@ -4,13 +4,13 @@ kind: Kustomization
 namespace: taskforge-dev
 
 resources:
-  - namespace.yaml
-  - ../../base
+- namespace.yaml
+- ../../base
 
 images:
-  - name: taskforge
-    newName: shubhszone/taskforge
-    newTag: v1.0.0
+- name: taskforge
+  newName: shubhszone/taskforge
+  newTag: v1.0.0
 
 generatorOptions:
   disableNameSuffixHash: true
