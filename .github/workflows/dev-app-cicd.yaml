@@ -31,7 +31,6 @@ jobs:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
         with:
-          # registry: ghcr.io
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PAT_TOKEN }}
       
@@ -62,22 +61,29 @@ jobs:
     env:
       DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      NAMESPACE: taskforge-dev
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           clean: true
+
+      - name: Inject Kubernetes Secrets
+        run: |
+          kubectl create secret generic taskforge-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=DATABASE_URL="postgres://taskforge:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/taskforge" \
+            --from-literal=REDIS_URL="redis://redis:6379" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Deploy to Kubernetes
         run: |
-          # 1. Apply all Kubernetes manifests
-          kubectl apply -f k8s/
-          # 2. Trigger a rollout restart so the deployment pulls the new image
-          kubectl rollout restart deployment/taskforge-web -n taskforge
-          # 3. Wait for the new pods to become Ready
-          kubectl rollout status deployment/taskforge-web -n taskforge --timeout=120s
+          kubectl apply -k k8s/overlays/dev
+
       - name: Verify Deployment Status
         run: |
-          kubectl get pods,services -n taskforge
+          kubectl get pods,services -n taskforge-dev
 
           
     
