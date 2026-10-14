@@ -98,12 +98,40 @@ jobs:
             ${{ vars.DOCKER_USERNAME }}/taskforge:${{ steps.version_step.outputs.version }}
 
   # =========================================================================
-  # STAGE 2: Deploy Artifact to Dev Environment
+  # STAGE 2: Dev Plan, Approval, and Deployment
   # =========================================================================
-  deploy-dev:
-    name: Deploy to Dev
+  dev-plan:
+    name: Dev Kustomize Plan (Dry Run)
     needs: build-and-release
     if: needs.build-and-release.outputs.should_deploy == 'true'
+    runs-on: infra
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Preview Dev Manifests with Version
+        run: |
+          echo "=== Previewing Dev Manifests for ${{ needs.build-and-release.outputs.version }} ==="
+          cd k8s/overlays/dev
+          kustomize edit set image taskforge=${{ vars.DOCKER_USERNAME }}/taskforge:${{ needs.build-and-release.outputs.version }}
+          kubectl kustomize .
+
+  dev-approval:
+    name: Dev Deployment Approval Gate
+    needs: [build-and-release, dev-plan]
+    runs-on: ubuntu-latest
+    environment:
+      name: approval-env
+    steps:
+      - name: Dev Deployment Approved
+        run: |
+          echo "Approved deployment of version ${{ needs.build-and-release.outputs.version }} to Dev."
+
+  deploy-dev:
+    name: Deploy to Dev
+    needs: [build-and-release, dev-approval]
     runs-on: infra
     environment:
       name: dev
@@ -145,12 +173,39 @@ jobs:
           kubectl get pods,services -n ${{ env.NAMESPACE }}
 
   # =========================================================================
-  # STAGE 3: Promote EXACT SAME Artifact to Production
+  # STAGE 3: Prod Plan, Approval, and Promotion (EXACT SAME Artifact)
   # =========================================================================
+  prod-plan:
+    name: Prod Kustomize Plan (Dry Run)
+    needs: [build-and-release, deploy-dev]
+    runs-on: infra
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Preview Prod Manifests with Version
+        run: |
+          echo "=== Previewing Prod Manifests for ${{ needs.build-and-release.outputs.version }} ==="
+          cd k8s/overlays/prod
+          kustomize edit set image taskforge=${{ vars.DOCKER_USERNAME }}/taskforge:${{ needs.build-and-release.outputs.version }}
+          kubectl kustomize .
+
+  prod-approval:
+    name: Prod Promotion Approval Gate
+    needs: [build-and-release, prod-plan]
+    runs-on: ubuntu-latest
+    environment:
+      name: approval-env
+    steps:
+      - name: Prod Promotion Approved
+        run: |
+          echo "Approved promotion of version ${{ needs.build-and-release.outputs.version }} to Production."
+
   deploy-prod:
     name: Promote to Production
-    needs: [build-and-release, deploy-dev]
-    if: needs.build-and-release.outputs.should_deploy == 'true'
+    needs: [build-and-release, prod-approval]
     runs-on: infra
     environment:
       name: prod
