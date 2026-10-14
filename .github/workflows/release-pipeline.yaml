@@ -84,7 +84,7 @@ jobs:
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PAT_TOKEN }}
-
+ 
       # Build and push the immutable container image ONCE with official SemVer
       - name: Build and Push Docker Image
         if: steps.version_step.outputs.should_deploy == 'true'
