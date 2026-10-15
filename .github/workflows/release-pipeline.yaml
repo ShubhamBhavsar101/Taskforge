@@ -29,8 +29,6 @@ jobs:
   build-and-release:
     name: Build Once & SemVer Release
     runs-on: ubuntu-latest
-    environment:
-      name: dev
     outputs:
       version: ${{ steps.version_step.outputs.version }}
       should_deploy: ${{ steps.version_step.outputs.should_deploy }}
