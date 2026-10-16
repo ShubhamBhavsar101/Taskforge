@@ -24,6 +24,8 @@ jobs:
     outputs:
       version: ${{ steps.version_step.outputs.version }}
       should_deploy: ${{ steps.version_step.outputs.should_deploy }}
+    environment:
+      name: dev
     steps:
       - name: Checkout Code with Full Git History
         uses: actions/checkout@v6
