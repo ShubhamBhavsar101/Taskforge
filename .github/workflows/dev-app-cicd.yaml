@@ -12,16 +12,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
   # =========================================================================
-  # STAGE 1: Calculate SemVer with suffix & Build Dev Image
+  # STAGE 1: Calculate SemVer with -dev-{shortsha} suffix & Build Dev Image
   # =========================================================================
   build:
-    name: Build and Push Dev Image with Suffix
-    runs-on: ubuntu-latest
+    name: Build and Push Dev Image
+    runs-on: ubuntu-26.04-arm
     environment:
       name: dev 
     outputs:
@@ -43,18 +43,15 @@ jobs:
           minor_pattern: "feat:"
           version_format: "${major}.${minor}.${patch}"
 
-      # Append -build-<short_commithash> suffix
-      - name: Construct Version with Build Suffix
+      # Construct Image Tag (x.x.x-dev-{shortsha})
+      - name: Construct Version Identifiers
         id: version_step
         run: |
           SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha || github.sha }}" | cut -c1-7)
-          BASE_VERSION="${{ steps.semver.outputs.version_tag }}"
-          DEV_VERSION="${BASE_VERSION}-build-${SHORT_SHA}"
-          echo "version=${DEV_VERSION}" >> $GITHUB_OUTPUT
-          echo "Generated Dev Version: ${DEV_VERSION}"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+          BASE_VERSION="${{ steps.semver.outputs.version }}"
+          IMAGE_TAG="${BASE_VERSION}-dev-${SHORT_SHA}"
+          echo "version=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "Docker Image Tag: ${IMAGE_TAG}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -71,7 +68,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           tags: |
             ${{ vars.DOCKER_USERNAME || 'shubhszone' }}/taskforge:${{ steps.version_step.outputs.version }}
 
@@ -90,7 +87,7 @@ jobs:
         with:
           clean: true
 
-      - name: Preview Dev Manifests with Suffix Version
+      - name: Preview Dev Manifests with Dev Version
         run: |
           DOCKER_USER="${{ vars.DOCKER_USERNAME || needs.build.outputs.docker_username || 'shubhszone' }}"
           echo "=== Previewing Dev Manifests for ${{ needs.build.outputs.version }} ==="
@@ -141,7 +138,7 @@ jobs:
             --from-literal=REDIS_URL="redis://redis:6379" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Set Dev Overlay Image Tag to Suffix Version
+      - name: Set Dev Overlay Image Tag to Dev Version
         run: |
           DOCKER_USER="${{ env.DOCKER_USERNAME || needs.build.outputs.docker_username || 'shubhszone' }}"
           cd k8s/overlays/dev
@@ -151,8 +148,13 @@ jobs:
         run: |
           kubectl apply -k k8s/overlays/dev
 
-      - name: Verify Dev Rollout
+      - name: Verify Dev Rollout with Automatic Rollback
         run: |
           kubectl rollout status statefulset/postgres -n ${{ env.NAMESPACE }} --timeout=60s
-          kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s || {
+            echo "Dev deployment failed! Rolling back to previous revision..."
+            kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
+            kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
+            exit 1
+          }
           kubectl get pods,services -n ${{ env.NAMESPACE }}

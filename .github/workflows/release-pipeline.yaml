@@ -1,14 +1,6 @@
 name: Release Pipeline | Build Once, Deploy Everywhere
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'k8s/**'
-      - 'Dockerfile'
-      - '.github/workflows/release-pipeline.yaml'
   workflow_dispatch:
     inputs:
       manual_version:
@@ -68,6 +60,35 @@ jobs:
           else
             echo "No new release published by semantic-release (no relevant conventional commits)."
             echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Ensure initial release is flagged as Release Candidate (prerelease: true)
+      - name: "Mark Release as Release Candidate (prerelease: true)"
+        if: steps.version_step.outputs.should_deploy == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version_step.outputs.version }}
+        run: |
+          echo "Configuring '${TAG}' as Release Candidate (prerelease=true, make_latest=false)..."
+          RELEASE_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG} | jq -r '.id // empty')
+
+          if [ -n "${RELEASE_ID}" ]; then
+            curl -fsSL -X PATCH \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID} \
+              -d '{"prerelease": true, "make_latest": "false"}'
+            echo "Successfully updated release ${RELEASE_ID} (${TAG}) to Release Candidate."
+          else
+            echo "Creating initial Release Candidate for manual version '${TAG}'..."
+            curl -fsSL -X POST \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/releases \
+              -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG} (Release Candidate)\",\"prerelease\":true,\"make_latest\":\"false\",\"generate_release_notes\":true}"
+            echo "Successfully created Release Candidate '${TAG}'."
           fi
 
       - name: Set up QEMU
@@ -167,10 +188,15 @@ jobs:
         run: |
           kubectl apply -k k8s/overlays/dev
 
-      - name: Verify Dev Rollout
+      - name: Verify Dev Rollout with Automatic Rollback
         run: |
           kubectl rollout status statefulset/postgres -n ${{ env.NAMESPACE }} --timeout=60s
-          kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s || {
+            echo "Dev deployment failed! Rolling back to previous revision..."
+            kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
+            kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
+            exit 1
+          }
           kubectl get pods,services -n ${{ env.NAMESPACE }}
 
   staging-plan:
@@ -325,6 +351,37 @@ jobs:
           kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=180s || {
             echo "Production deployment failed! Rolling back to previous revision..."
             kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
+            kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
             exit 1
           }
           kubectl get pods,services -n ${{ env.NAMESPACE }}
+
+  # =========================================================================
+  # STAGE 4: Promote Release Candidate to Official Latest Release
+  # =========================================================================
+  promote-release:
+    name: "🏆 Prod: Promote to Official Latest Release"
+    needs: [build-and-release, deploy-prod]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Promote Release Candidate to Official Latest Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build-and-release.outputs.version }}
+        run: |
+          echo "Promoting release candidate '${TAG}' to Official Latest Release..."
+          RELEASE_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG} | jq -r '.id // empty')
+
+          if [ -n "${RELEASE_ID}" ]; then
+            curl -fsSL -X PATCH \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID} \
+              -d "{\"name\":\"${TAG}\",\"prerelease\":false,\"make_latest\":\"true\"}"
+            echo "Successfully promoted ${TAG} (Release ID: ${RELEASE_ID}) to Official Latest Release!"
+          else
+            echo "Error: Release for tag '${TAG}' not found on GitHub." >&2
+            exit 1
+          fi
