@@ -10,7 +10,7 @@ on:
   push:
     branches:
       - main
- 
+
 permissions:
   contents: write
   packages: write
@@ -46,7 +46,7 @@ jobs:
             @semantic-release/release-notes-generator
             @semantic-release/github
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}     
 
       # Determine the resolved release version
       - name: Resolve Version
