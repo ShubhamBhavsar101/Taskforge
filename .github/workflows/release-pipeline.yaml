@@ -7,6 +7,9 @@ on:
         description: 'Optional manual SemVer tag (e.g. v1.0.1). Leave empty for automated semantic-release calculation.'
         required: false
         default: '' 
+  push:
+    branches:
+      - main
  
 permissions:
   contents: write
@@ -24,6 +27,8 @@ jobs:
     outputs:
       version: ${{ steps.version_step.outputs.version }}
       should_deploy: ${{ steps.version_step.outputs.should_deploy }}
+    environment:
+      name: dev
     steps:
       - name: Checkout Code with Full Git History
         uses: actions/checkout@v6
@@ -41,7 +46,7 @@ jobs:
             @semantic-release/release-notes-generator
             @semantic-release/github
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
 
       # Determine the resolved release version
       - name: Resolve Version
