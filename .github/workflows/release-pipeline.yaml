@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       manual_version:
-        description: 'Optional manual SemVer tag (e.g. v1.0.1). Leave empty for automated semantic-release calculation.'
-        required: false
-        default: '' 
+        description: 'SemVer release tag (e.g. v1.0.1)'
+        required: true
+        type: string 
   push:
     branches:
       - main
@@ -46,7 +46,7 @@ jobs:
             @semantic-release/release-notes-generator
             @semantic-release/github
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}     
 
       # Determine the resolved release version
       - name: Resolve Version
