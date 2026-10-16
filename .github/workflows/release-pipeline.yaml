@@ -1,14 +1,6 @@
 name: Release Pipeline | Build Once, Deploy Everywhere
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'k8s/**'
-      - 'Dockerfile'
-      - '.github/workflows/release-pipeline.yaml'
   workflow_dispatch:
     inputs:
       manual_version:
