@@ -123,7 +123,7 @@ jobs:
       - name: Verify Rollout with Automatic Rollback
         run: |
           # 1. Verify stateful workloads
-          kubectl rollout status statefulset -n ${{ env.NAMESPACE }} --timeout=60s
+          kubectl rollout status statefulset -n ${{ env.NAMESPACE }} --timeout=180s
 
           # 2. Verify deployments with automatic rollback
           kubectl rollout status deployment -n ${{ env.NAMESPACE }} --timeout=180s || {
