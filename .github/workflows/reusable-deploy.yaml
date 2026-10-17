@@ -119,6 +119,9 @@ jobs:
       - name: Deploy Manifests
         run: |
           kubectl apply -k k8s/overlays/${{ env.DEPLOY_ENV }}
+          
+          # Force web pods to reload updated secrets and configuration
+          kubectl rollout restart deployment/taskforge-web -n ${{ env.NAMESPACE }}
 
       - name: Verify Rollout with Automatic Rollback
         run: |
