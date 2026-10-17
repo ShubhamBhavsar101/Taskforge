@@ -27,6 +27,7 @@ jobs:
     outputs:
       version: ${{ steps.version_step.outputs.version }}
       should_deploy: ${{ steps.version_step.outputs.should_deploy }}
+      release_id: ${{ steps.release_step.outputs.release_id }}
     environment:
       name: dev
     steps:
@@ -67,14 +68,15 @@ jobs:
             echo "should_deploy=false" >> $GITHUB_OUTPUT
           fi
 
-      # Ensure initial release is flagged as Release Candidate (prerelease: true)
-      - name: "Mark Release as Release Candidate (prerelease: true)"
+      # Hold release as a Draft initially so it is not visible as a Pre-release until Staging verification
+      - name: "Keep Release as Draft until Staging"
+        id: release_step
         if: steps.version_step.outputs.should_deploy == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version_step.outputs.version }}
         run: |
-          echo "Configuring '${TAG}' as Release Candidate (prerelease=true, make_latest=false)..."
+          echo "Setting '${TAG}' as Draft release until Staging verification..."
           RELEASE_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG} | jq -r '.id // empty')
@@ -84,16 +86,19 @@ jobs:
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               https://api.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID} \
-              -d '{"prerelease": true, "make_latest": "false"}'
-            echo "Successfully updated release ${RELEASE_ID} (${TAG}) to Release Candidate."
+              -d '{"draft": true, "prerelease": true, "make_latest": "false"}'
+            echo "release_id=${RELEASE_ID}" >> $GITHUB_OUTPUT
+            echo "Release ${RELEASE_ID} (${TAG}) set to Draft."
           else
-            echo "Creating initial Release Candidate for manual version '${TAG}'..."
-            curl -fsSL -X POST \
+            echo "Creating initial Draft release for '${TAG}'..."
+            RES=$(curl -fsSL -X POST \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               https://api.github.com/repos/${{ github.repository }}/releases \
-              -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG} (Release Candidate)\",\"prerelease\":true,\"make_latest\":\"false\",\"generate_release_notes\":true}"
-            echo "Successfully created Release Candidate '${TAG}'."
+              -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG} (Draft)\",\"draft\":true,\"prerelease\":true,\"make_latest\":\"false\",\"generate_release_notes\":true}")
+            CREATED_ID=$(echo "${RES}" | jq -r '.id // empty')
+            echo "release_id=${CREATED_ID}" >> $GITHUB_OUTPUT
+            echo "Created Draft release ${CREATED_ID} for '${TAG}'."
           fi
 
   #     - name: Set up QEMU
@@ -276,10 +281,41 @@ jobs:
   #         kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=180s || {
   #           echo "Staging deployment failed! Rolling back to previous revision..."
   #           kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
+  #           kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
   #           exit 1
   #         }
   #         kubectl get pods,services -n ${{ env.NAMESPACE }}
 
+  #     # Staging passed health checks -> Publish as official Pre-Release (Production Candidate)
+  #     - name: "Publish as Production-Eligible Pre-Release"
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         TAG: ${{ env.TARGET_VERSION }}
+  #         RELEASE_ID: ${{ needs.build-and-release.outputs.release_id }}
+  #       run: |
+  #         echo "Staging rollout verified! Publishing '${TAG}' as official Pre-Release (Eligible for Production)..."
+  #         TARGET_ID="${RELEASE_ID}"
+  #         if [ -z "${TARGET_ID}" ]; then
+  #           TARGET_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  #             -H "Accept: application/vnd.github+json" \
+  #             https://api.github.com/repos/${{ github.repository }}/releases | jq -r ".[] | select(.tag_name==\"${TAG}\") | .id" | head -n 1)
+  #         fi
+
+  #         if [ -n "${TARGET_ID}" ]; then
+  #           curl -fsSL -X PATCH \
+  #             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  #             -H "Accept: application/vnd.github+json" \
+  #             https://api.github.com/repos/${{ github.repository }}/releases/${TARGET_ID} \
+  #             -d "{\"name\":\"${TAG} (Production Candidate)\",\"draft\":false,\"prerelease\":true,\"make_latest\":\"false\"}"
+  #           echo "Successfully published ${TAG} (Release ID: ${TARGET_ID}) as Pre-Release (eligible for Production)!"
+  #         else
+  #           echo "Creating Pre-Release for tag ${TAG}..."
+  #           curl -fsSL -X POST \
+  #             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  #             -H "Accept: application/vnd.github+json" \
+  #             https://api.github.com/repos/${{ github.repository }}/releases \
+  #             -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG} (Production Candidate)\",\"draft\":false,\"prerelease\":true,\"make_latest\":\"false\",\"generate_release_notes\":true}"
+  #         fi
 
   # # =========================================================================
   # # STAGE 3: Prod Manifest Preview, Approval, and Promotion (EXACT SAME Artifact)
@@ -373,20 +409,24 @@ jobs:
   #       env:
   #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   #         TAG: ${{ needs.build-and-release.outputs.version }}
+  #         RELEASE_ID: ${{ needs.build-and-release.outputs.release_id }}
   #       run: |
   #         echo "Promoting release candidate '${TAG}' to Official Latest Release..."
-  #         RELEASE_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-  #           -H "Accept: application/vnd.github+json" \
-  #           https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG} | jq -r '.id // empty')
+  #         TARGET_ID="${RELEASE_ID}"
+  #         if [ -z "${TARGET_ID}" ]; then
+  #           TARGET_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  #             -H "Accept: application/vnd.github+json" \
+  #             https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG} | jq -r '.id // empty')
+  #         fi
 
-  #         if [ -n "${RELEASE_ID}" ]; then
+  #         if [ -n "${TARGET_ID}" ]; then
   #           curl -fsSL -X PATCH \
   #             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
   #             -H "Accept: application/vnd.github+json" \
-  #             https://api.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID} \
-  #             -d "{\"name\":\"${TAG}\",\"prerelease\":false,\"make_latest\":\"true\"}"
-  #           echo "Successfully promoted ${TAG} (Release ID: ${RELEASE_ID}) to Official Latest Release!"
+  #             https://api.github.com/repos/${{ github.repository }}/releases/${TARGET_ID} \
+  #             -d "{\"name\":\"${TAG}\",\"draft\":false,\"prerelease\":false,\"make_latest\":\"true\"}"
+  #           echo "Successfully promoted ${TAG} (Release ID: ${TARGET_ID}) to Official Latest Release!"
   #         else
   #           echo "Error: Release for tag '${TAG}' not found on GitHub." >&2
   #           exit 1
-  #         f
+  #         fi
