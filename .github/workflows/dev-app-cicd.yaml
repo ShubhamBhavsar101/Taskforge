@@ -78,7 +78,7 @@ jobs:
   dev-deploy:
     name: "Dev Deployment"
     needs: build
-    uses: ./.github/workflows/dev-deploy.yaml
+    uses: ./.github/workflows/reusable-dev-deploy.yaml
     with:
       version: ${{ needs.build.outputs.version }}
     secrets: inherit
