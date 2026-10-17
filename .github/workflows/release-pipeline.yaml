@@ -48,24 +48,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}     
 
-  #     # Determine the resolved release version
-  #     - name: Resolve Version
-  #       id: version_step
-  #       run: |
-  #         if [ -n "${{ github.event.inputs.manual_version }}" ]; then
-  #           TAG="${{ github.event.inputs.manual_version }}"
-  #           echo "version=${TAG}" >> $GITHUB_OUTPUT
-  #           echo "should_deploy=true" >> $GITHUB_OUTPUT
-  #           echo "Target Version (Manual): ${TAG}"
-  #         elif [ "${{ steps.semantic.outputs.new_release_published }}" = "true" ]; then
-  #           TAG="${{ steps.semantic.outputs.new_release_git_tag }}"
-  #           echo "version=${TAG}" >> $GITHUB_OUTPUT
-  #           echo "should_deploy=true" >> $GITHUB_OUTPUT
-  #           echo "Target Version (Automated SemVer): ${TAG}"
-  #         else
-  #           echo "No new release published by semantic-release (no relevant conventional commits)."
-  #           echo "should_deploy=false" >> $GITHUB_OUTPUT
-  #         fi
+      # Determine the resolved release version
+      - name: Resolve Version
+        id: version_step
+        run: |
+          if [ -n "${{ github.event.inputs.manual_version }}" ]; then
+            TAG="${{ github.event.inputs.manual_version }}"
+            echo "version=${TAG}" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "Target Version (Manual): ${TAG}"
+          elif [ "${{ steps.semantic.outputs.new_release_published }}" = "true" ]; then
+            TAG="${{ steps.semantic.outputs.new_release_git_tag }}"
+            echo "version=${TAG}" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "Target Version (Automated SemVer): ${TAG}"
+          else
+            echo "No new release published by semantic-release (no relevant conventional commits)."
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
 
   #     # Ensure initial release is flagged as Release Candidate (prerelease: true)
   #     - name: "Mark Release as Release Candidate (prerelease: true)"
@@ -389,4 +389,4 @@ jobs:
   #         else
   #           echo "Error: Release for tag '${TAG}' not found on GitHub." >&2
   #           exit 1
-  #         fi
+  #         f
