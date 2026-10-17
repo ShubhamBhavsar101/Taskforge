@@ -59,14 +59,17 @@ jobs:
             echo "version=${TAG}" >> $GITHUB_OUTPUT
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "Target Version (Manual): ${TAG}"
+            echo "### 🚀 Target Version (Manual): \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ steps.semantic.outputs.new_release_published }}" = "true" ]; then
             TAG="${{ steps.semantic.outputs.new_release_git_tag }}"
             echo "version=${TAG}" >> $GITHUB_OUTPUT
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "Target Version (Automated SemVer): ${TAG}"
+            echo "### 🚀 Target Version (Automated SemVer): \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
           else
             echo "No new release published by semantic-release (no relevant conventional commits)."
             echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "### ℹ️ Target Version: No new release published by semantic-release" >> $GITHUB_STEP_SUMMARY
           fi
 
       # Hold release as a Draft initially so it is not visible as a Pre-release until Staging verification
@@ -133,23 +136,30 @@ jobs:
   # STAGE 2: Dev Manifest Preview, Approval, and Deployment
   # =========================================================================
   dev-deploy:
-    name: "Dev Deployment"
+    name: "🧪 Dev Deployment"
     needs: build-and-release
     if: needs.build-and-release.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/reusable-dev-deploy.yaml
+    uses: ./.github/workflows/reusable-deploy.yaml
     with:
+      env: dev
       version: ${{ needs.build-and-release.outputs.version }}
+      approval_env: approval-dev
+      runner: infra
     secrets: inherit
 
   # =========================================================================
   # STAGE 3: Staging Preview, Promotion Approval, and Candidate Verification
   # =========================================================================
   stage-deploy:
-    name: "Staging Deployment"
+    name: "🎯 Staging Deployment"
     needs: [build-and-release, dev-deploy]
     if: needs.build-and-release.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/reusable-stage-deploy.yaml
+    uses: ./.github/workflows/reusable-deploy.yaml
     with:
+      env: staging
       version: ${{ needs.build-and-release.outputs.version }}
+      approval_env: approval-staging
+      runner: infra
+      promote_to_prerelease: true
       release_id: ${{ needs.build-and-release.outputs.release_id }}
     secrets: inherit

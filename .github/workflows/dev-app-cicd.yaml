@@ -14,6 +14,7 @@ on:
 permissions:
   contents: write
   packages: write
+  actions: write
 
 jobs:
   # =========================================================================
@@ -76,9 +77,12 @@ jobs:
   # STAGE 2: Dev Manifest Preview & Approval Gate
   # =========================================================================
   dev-deploy:
-    name: "Dev Deployment"
+    name: "🧪 Dev Deployment"
     needs: build
-    uses: ./.github/workflows/reusable-dev-deploy.yaml
+    uses: ./.github/workflows/reusable-deploy.yaml
     with:
+      env: dev
       version: ${{ needs.build.outputs.version }}
+      approval_env: approval-dev
+      runner: infra
     secrets: inherit
