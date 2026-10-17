@@ -82,6 +82,6 @@ jobs:
     with:
       env: dev
       version: ${{ needs.build.outputs.version }}
-      approval_environment: approval-dev
+      approval_env: approval-dev
       runner: infra
     secrets: inherit

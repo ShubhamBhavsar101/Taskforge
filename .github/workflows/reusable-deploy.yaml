@@ -120,7 +120,7 @@ jobs:
     if: |
       always() &&
       (needs.plan.result == 'success') &&
-      (inputs.approval_env != '' ? needs.approval.result == 'success' : true)
+      (inputs.approval_env == '' || needs.approval.result == 'success')
     runs-on: ${{ inputs.runner }}
     environment:
       name: ${{ inputs.env }}
