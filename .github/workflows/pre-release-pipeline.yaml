@@ -148,7 +148,21 @@ jobs:
     secrets: inherit
 
   # =========================================================================
-  # STAGE 3: Staging Preview, Promotion Approval, and Candidate Verification
+  # STAGE 3: Test Preview, Promotion Approval, Deployment
+  # =========================================================================
+
+  tst-deploy:
+    name: "🔬 Test Deployment"
+    needs: dev-deploy
+    uses: ./.github/workflows/reusable-deploy.yaml
+    with:
+      env: tst
+      version: ${{ needs.build-and-release.outputs.version }}
+      approval_env: approval-tst
+      runner: infra
+    secrets: inherit
+  # =========================================================================
+  # STAGE 4: Staging Preview, Promotion Approval, and Candidate Verification
   # =========================================================================
   stage-deploy:
     name: "🎯 Staging Deployment"
@@ -165,7 +179,7 @@ jobs:
     secrets: inherit
 
   # =========================================================================
-  # STAGE 4: Publish Pre-Release Candidate & Dispatch Production Pipeline
+  # STAGE 5: Publish Pre-Release Candidate & Dispatch Production Pipeline
   # =========================================================================
   publish-and-trigger-prod:
     name: "📢 Publish Pre-Release & Dispatch Prod"
