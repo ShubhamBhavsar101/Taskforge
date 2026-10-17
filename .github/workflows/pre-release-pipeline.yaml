@@ -153,7 +153,7 @@ jobs:
 
   tst-deploy:
     name: "🔬 Test Deployment"
-    needs: dev-deploy
+    needs: [build-and-release, dev-deploy]
     uses: ./.github/workflows/reusable-deploy.yaml
     with:
       env: tst
@@ -166,7 +166,7 @@ jobs:
   # =========================================================================
   stage-deploy:
     name: "🎯 Staging Deployment"
-    needs: [build-and-release, dev-deploy]
+    needs: [build-and-release, tst-deploy]
     if: needs.build-and-release.outputs.should_deploy == 'true'
     uses: ./.github/workflows/reusable-deploy.yaml
     with:
