@@ -152,7 +152,7 @@ jobs:
   # =========================================================================
 
   tst-deploy:
-    name: "🔬 Test Deployment"
+    name: "🎲 Test Deployment"
     needs: [build-and-release, dev-deploy]
     uses: ./.github/workflows/reusable-deploy.yaml
     with:
@@ -182,7 +182,7 @@ jobs:
   # STAGE 5: Publish Pre-Release Candidate & Dispatch Production Pipeline
   # =========================================================================
   publish-and-trigger-prod:
-    name: "📢 Publish Pre-Release & Dispatch Prod"
+    name: "✈️ Publish Pre-Release & Dispatch Prod"
     needs: [build-and-release, stage-deploy]
     if: needs.build-and-release.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
