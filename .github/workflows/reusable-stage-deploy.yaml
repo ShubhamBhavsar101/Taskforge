@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   staging-plan:
@@ -126,3 +127,15 @@ jobs:
             https://api.github.com/repos/${{ github.repository }}/releases/${TARGET_ID} \
             -d "{\"name\":\"${TAG} (Release Candidate)\",\"draft\":false,\"prerelease\":true,\"make_latest\":\"false\"}"
           echo "Successfully published ${TAG} (Release ID: ${TARGET_ID}) as Pre-Release (eligible for Production)!"
+
+      - name: Trigger Production Release Pipeline
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TARGET_VERSION }}
+        run: |
+          echo "Staging verified! Triggering Production Release for '${TAG}'..."
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/release-pipeline.yaml/dispatches \
+            -d "{\"ref\":\"main\",\"inputs\":{\"version\":\"${TAG}\"}}"

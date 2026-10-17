@@ -1,22 +1,19 @@
 name: Production Release
 
 on:
-  workflow_run:
-    workflows: ["Pre Release Pipeline"]
-    types: [completed]
-    branches: [main]
-  # workflow_call:
-  #   inputs:
-  #     version:
-  #       description: 'SemVer release tag to deploy to Production (leave empty for latest Pre-Release)'
-  #       required: false
-  #       type: string
-  #       default: ''
+
+  workflow_call:
+    inputs:
+      version:
+        description: 'SemVer release tag to deploy to Production (leave empty for latest Pre-Release)'
+        required: true
+        type: string
+        default: ''
   workflow_dispatch:
     inputs:
       version:
         description: 'SemVer release tag to deploy to Production (leave empty for latest Pre-Release)'
-        required: false
+        required: true
         type: string
         default: ''
 
@@ -26,8 +23,7 @@ permissions:
 jobs:
   prod-deploy:
     name: "Production Deployment"
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/reusable-prod-deploy.yaml
     with:
-      version: ${{ inputs.version || '' }}
+      version: ${{ inputs.version }}
     secrets: inherit
