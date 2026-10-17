@@ -59,14 +59,17 @@ jobs:
             echo "version=${TAG}" >> $GITHUB_OUTPUT
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "Target Version (Manual): ${TAG}"
+            echo "### 🚀 Target Version (Manual): \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ steps.semantic.outputs.new_release_published }}" = "true" ]; then
             TAG="${{ steps.semantic.outputs.new_release_git_tag }}"
             echo "version=${TAG}" >> $GITHUB_OUTPUT
             echo "should_deploy=true" >> $GITHUB_OUTPUT
             echo "Target Version (Automated SemVer): ${TAG}"
+            echo "### 🚀 Target Version (Automated SemVer): \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
           else
             echo "No new release published by semantic-release (no relevant conventional commits)."
             echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "### ℹ️ Target Version: No new release published by semantic-release" >> $GITHUB_STEP_SUMMARY
           fi
 
       # Hold release as a Draft initially so it is not visible as a Pre-release until Staging verification
