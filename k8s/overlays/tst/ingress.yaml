@@ -5,4 +5,13 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: tst.taskforge.local 
+  - host: tst.taskforge.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: taskforge-web
+            port:
+              number: 3000
