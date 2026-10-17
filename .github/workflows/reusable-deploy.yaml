@@ -62,6 +62,10 @@ jobs:
           cd k8s/overlays/${{ inputs.env }}
           kustomize edit set image taskforge=${DOCKER_USER}/taskforge:${{ inputs.version }}
           kubectl kustomize .
+      
+      - name: DEBUG
+        run: |
+          echo "approval_env: ${{ inputs.approval_env }}"
 
   # =========================================================================
   # APPROVAL: Optional Approval Gate
