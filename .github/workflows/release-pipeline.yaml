@@ -27,7 +27,7 @@ jobs:
   prod-deploy:
     name: "Production Deployment"
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    uses: ./.github/workflows/prod-deploy.yaml
+    uses: ./.github/workflows/reusable-prod-deploy.yaml
     with:
       version: ${{ inputs.version || '' }}
     secrets: inherit

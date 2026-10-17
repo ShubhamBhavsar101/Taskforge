@@ -135,7 +135,7 @@ jobs:
     name: "Dev Deployment"
     needs: build-and-release
     if: needs.build-and-release.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/dev-deploy.yaml
+    uses: ./.github/workflows/reusable-dev-deploy.yaml
     with:
       version: ${{ needs.build-and-release.outputs.version }}
     secrets: inherit
@@ -147,7 +147,7 @@ jobs:
     name: "Staging Deployment"
     needs: [build-and-release, dev-deploy]
     if: needs.build-and-release.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/stage-deploy.yaml
+    uses: ./.github/workflows/reusable-stage-deploy.yaml
     with:
       version: ${{ needs.build-and-release.outputs.version }}
       release_id: ${{ needs.build-and-release.outputs.release_id }}
