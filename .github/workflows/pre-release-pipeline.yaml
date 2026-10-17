@@ -1,0 +1,155 @@
+name: Pre Release Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      manual_version:
+        description: 'SemVer release tag (e.g. v1.0.1)'
+        required: true
+        type: string 
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  # =========================================================================
+  # STAGE 1: Calculate Official SemVer via cycjimmy & Build Artifact ONCE
+  # =========================================================================
+  build-and-release:
+    name: Build Once & SemVer Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version_step.outputs.version }}
+      should_deploy: ${{ steps.version_step.outputs.should_deploy }}
+      release_id: ${{ steps.release_step.outputs.release_id }}
+    environment:
+      name: dev
+    steps:
+      - name: Checkout Code with Full Git History
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # Official Semantic Release on main (tags Git, generates GitHub Release & Changelog)
+      - name: Run Semantic Release
+        id: semantic
+        if: ${{ github.event.inputs.manual_version == '' }}
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/commit-analyzer
+            @semantic-release/release-notes-generator
+            @semantic-release/github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}     
+
+      # Determine the resolved release version
+      - name: Resolve Version
+        id: version_step
+        run: |
+          if [ -n "${{ github.event.inputs.manual_version }}" ]; then
+            TAG="${{ github.event.inputs.manual_version }}"
+            echo "version=${TAG}" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "Target Version (Manual): ${TAG}"
+          elif [ "${{ steps.semantic.outputs.new_release_published }}" = "true" ]; then
+            TAG="${{ steps.semantic.outputs.new_release_git_tag }}"
+            echo "version=${TAG}" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "Target Version (Automated SemVer): ${TAG}"
+          else
+            echo "No new release published by semantic-release (no relevant conventional commits)."
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Hold release as a Draft initially so it is not visible as a Pre-release until Staging verification
+      - name: "Keep Release as Draft until Staging"
+        id: release_step
+        if: steps.version_step.outputs.should_deploy == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version_step.outputs.version }}
+        run: |
+          echo "Setting '${TAG}' as Draft release until Staging verification..."
+          RELEASE_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG} | jq -r '.id // empty')
+
+          if [ -n "${RELEASE_ID}" ]; then
+            curl -fsSL -X PATCH \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID} \
+              -d '{"draft": true, "prerelease": true, "make_latest": "false"}'
+            echo "release_id=${RELEASE_ID}" >> $GITHUB_OUTPUT
+            echo "Release ${RELEASE_ID} (${TAG}) set to Draft."
+          else
+            echo "Creating initial Draft release for '${TAG}'..."
+            RES=$(curl -fsSL -X POST \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/releases \
+              -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG} (Draft)\",\"draft\":true,\"prerelease\":true,\"make_latest\":\"false\",\"generate_release_notes\":true}")
+            CREATED_ID=$(echo "${RES}" | jq -r '.id // empty')
+            echo "release_id=${CREATED_ID}" >> $GITHUB_OUTPUT
+            echo "Created Draft release ${CREATED_ID} for '${TAG}'."
+          fi
+
+      - name: Set up QEMU
+        if: steps.version_step.outputs.should_deploy == 'true'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        if: steps.version_step.outputs.should_deploy == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        if: steps.version_step.outputs.should_deploy == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PAT_TOKEN }}
+ 
+      # Build and push the immutable container image ONCE with official SemVer
+      - name: Build and Push Docker Image
+        if: steps.version_step.outputs.should_deploy == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ vars.DOCKER_USERNAME }}/taskforge:${{ steps.version_step.outputs.version }}
+
+  # =========================================================================
+  # STAGE 2: Dev Manifest Preview, Approval, and Deployment
+  # =========================================================================
+  dev-deploy:
+    name: "Dev Deployment"
+    needs: build-and-release
+    if: needs.build-and-release.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/reusable-dev-deploy.yaml
+    with:
+      version: ${{ needs.build-and-release.outputs.version }}
+    secrets: inherit
+
+  # =========================================================================
+  # STAGE 3: Staging Preview, Promotion Approval, and Candidate Verification
+  # =========================================================================
+  stage-deploy:
+    name: "Staging Deployment"
+    needs: [build-and-release, dev-deploy]
+    if: needs.build-and-release.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/reusable-stage-deploy.yaml
+    with:
+      version: ${{ needs.build-and-release.outputs.version }}
+      release_id: ${{ needs.build-and-release.outputs.release_id }}
+    secrets: inherit

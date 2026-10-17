@@ -75,86 +75,10 @@ jobs:
   # =========================================================================
   # STAGE 2: Dev Manifest Preview & Approval Gate
   # =========================================================================
-  dev-plan:
-    name: Dev Kustomize Plan (Dry Run)
+  dev-deploy:
+    name: "Dev Deployment"
     needs: build
-    runs-on: infra
-    environment:
-      name: dev
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-        with:
-          clean: true
-
-      - name: Preview Dev Manifests with Dev Version
-        run: |
-          DOCKER_USER="${{ vars.DOCKER_USERNAME || needs.build.outputs.docker_username || 'shubhszone' }}"
-          echo "=== Previewing Dev Manifests for ${{ needs.build.outputs.version }} ==="
-          cd k8s/overlays/dev
-          kustomize edit set image taskforge=${DOCKER_USER}/taskforge:${{ needs.build.outputs.version }}
-          kubectl kustomize .
-
-  dev-approval:
-    name: Dev Deployment Approval Gate
-    needs: [build, dev-plan]
-    runs-on: ubuntu-latest
-    environment:
-      name: approval-env
-    steps:
-      - name: Dev Deployment Approved
-        run: |
-          echo "Approved deployment of version ${{ needs.build.outputs.version }} to Dev."
-
-  # =========================================================================
-  # STAGE 3: Deploy to Dev Environment
-  # =========================================================================
-  deploy-dev:
-    name: Deploy to Dev
-    needs: [build, dev-approval]
-    runs-on: infra
-    environment:
-      name: dev
-    env:
-      NAMESPACE: taskforge-dev
-      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME || 'shubhszone' }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      TARGET_VERSION: ${{ needs.build.outputs.version }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-        with:
-          clean: true
-
-      - name: Ensure Dev Namespace Exists
-        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Inject Kubernetes Secrets
-        run: |
-          kubectl create secret generic taskforge-secrets \
-            --namespace=${{ env.NAMESPACE }} \
-            --from-literal=POSTGRES_PASSWORD="${{ env.POSTGRES_PASSWORD }}" \
-            --from-literal=DATABASE_URL="postgres://taskforge:${{ env.POSTGRES_PASSWORD }}@postgres:5432/taskforge" \
-            --from-literal=REDIS_URL="redis://redis:6379" \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Set Dev Overlay Image Tag to Dev Version
-        run: |
-          DOCKER_USER="${{ env.DOCKER_USERNAME || needs.build.outputs.docker_username || 'shubhszone' }}"
-          cd k8s/overlays/dev
-          kustomize edit set image taskforge=${DOCKER_USER}/taskforge:${{ env.TARGET_VERSION }}
-
-      - name: Deploy to Dev
-        run: |
-          kubectl apply -k k8s/overlays/dev
-
-      - name: Verify Dev Rollout with Automatic Rollback
-        run: |
-          kubectl rollout status statefulset/postgres -n ${{ env.NAMESPACE }} --timeout=60s
-          kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s || {
-            echo "Dev deployment failed! Rolling back to previous revision..."
-            kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
-            kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
-            exit 1
-          }
-          kubectl get pods,services -n ${{ env.NAMESPACE }}
+    uses: ./.github/workflows/reusable-dev-deploy.yaml
+    with:
+      version: ${{ needs.build.outputs.version }}
+    secrets: inherit
