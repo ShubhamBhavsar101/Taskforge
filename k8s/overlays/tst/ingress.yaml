@@ -5,4 +5,4 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: tst.taskforge.local
+  - host: tst.taskforge.local 
