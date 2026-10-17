@@ -16,7 +16,7 @@ on:
         required: false
         type: string
         default: 'infra'
-      approval_environment:
+      approval_env:
         description: 'Optional environment name for approval gate'
         required: false
         type: string
@@ -101,12 +101,11 @@ jobs:
   # APPROVAL: Optional Approval Gate
   # =========================================================================
   approval:
-    name: "Deployment Approval Gate (${{ inputs.approval_environment }})"
+    name: "Deployment Approval Gate"
     needs: plan
-    if: inputs.approval_environment != ''
+    if: ${{ inputs.approval_env != '' }}
     runs-on: ubuntu-latest
-    environment:
-      name: ${{ inputs.approval_environment }}
+    environment: ${{ inputs.approval_env }}
     steps:
       - name: Deployment Approved
         run: |
@@ -118,7 +117,10 @@ jobs:
   deploy:
     name: "Deploy to ${{ inputs.env }}"
     needs: [plan, approval]
-    if: always() && (needs.plan.result == 'success') && (needs.approval.result == 'success' || needs.approval.result == 'skipped')
+    if: |
+      always() &&
+      (needs.plan.result == 'success') &&
+      (inputs.approval_env != '' ? needs.approval.result == 'success' : true)
     runs-on: ${{ inputs.runner }}
     environment:
       name: ${{ inputs.env }}

@@ -143,7 +143,7 @@ jobs:
     with:
       env: dev
       version: ${{ needs.build-and-release.outputs.version }}
-      approval_environment: approval-dev
+      approval_env: approval-dev
       runner: infra
     secrets: inherit
 
@@ -158,7 +158,7 @@ jobs:
     with:
       env: staging
       version: ${{ needs.build-and-release.outputs.version }}
-      approval_environment: approval-staging
+      approval_env: approval-staging
       runner: infra
       promote_to_prerelease: true
       release_id: ${{ needs.build-and-release.outputs.release_id }}
