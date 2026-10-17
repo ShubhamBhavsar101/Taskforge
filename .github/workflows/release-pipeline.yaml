@@ -22,8 +22,11 @@ permissions:
 
 jobs:
   prod-deploy:
-    name: "Production Deployment"
-    uses: ./.github/workflows/reusable-prod-deploy.yaml
+    name: "🚀 Production Deployment"
+    uses: ./.github/workflows/reusable-deploy.yaml
     with:
+      env: prod
       version: ${{ inputs.version }}
+      runner: infra-prod
+      promote_to_latest: true
     secrets: inherit

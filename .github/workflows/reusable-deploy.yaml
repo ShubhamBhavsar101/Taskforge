@@ -1,0 +1,236 @@
+name: Reusable Deployment
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        description: 'Target environment name (dev, staging, prod)'
+        required: true
+        type: string
+      version:
+        description: 'SemVer container image tag'
+        required: true
+        type: string
+      runner:
+        description: 'Runner label to execute deploy operations'
+        required: false
+        type: string
+        default: 'infra'
+      approval_environment:
+        description: 'Optional environment name for approval gate'
+        required: false
+        type: string
+        default: ''
+      promote_to_prerelease:
+        description: 'Whether to publish candidate as pre-release and trigger production pipeline'
+        required: false
+        type: boolean
+        default: false
+      promote_to_latest:
+        description: 'Whether to promote pre-release to official latest release'
+        required: false
+        type: boolean
+        default: false
+      release_id:
+        description: 'GitHub Release ID to publish (used for staging)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  # =========================================================================
+  # PREFLIGHT: Validate Pre-Release Eligibility (Production only)
+  # =========================================================================
+  preflight:
+    name: "Pre flight checks"
+    if: inputs.promote_to_latest == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Pre-Release Eligibility
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.version }}
+        run: |
+          echo "Validating that tag '${TAG}' has an active Pre-Release before Production rollout..."
+          HTTP_STATUS=$(curl -s -o /tmp/release.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG})
+
+          if [ "${HTTP_STATUS}" != "200" ]; then
+            echo "::error::No GitHub Release found for tag '${TAG}' (HTTP ${HTTP_STATUS}). Only tags with an approved Pre-Release can be deployed to Production."
+            exit 1
+          fi
+
+          IS_PRERELEASE=$(jq -r '.prerelease // false' /tmp/release.json)
+          if [ "${IS_PRERELEASE}" != "true" ]; then
+            echo "::error::Release for tag '${TAG}' is NOT marked as a Pre-Release (prerelease: true). Only verified Pre-Releases from Staging are eligible for Production."
+            exit 1
+          fi
+
+          echo "Validation passed: Tag '${TAG}' is a confirmed Pre-Release eligible for Production."
+
+  # =========================================================================
+  # PLAN: Preview Kustomize Manifests
+  # =========================================================================
+  plan:
+    name: "Preview Manifests (${{ inputs.env }})"
+    needs: preflight
+    if: always() && (needs.preflight.result == 'success' || needs.preflight.result == 'skipped')
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.promote_to_latest && inputs.version || '' }}
+          clean: true
+
+      - name: Preview Manifests with Version
+        run: |
+          DOCKER_USER="${{ vars.DOCKER_USERNAME || 'shubhszone' }}"
+          echo "=== Previewing '${{ inputs.env }}' manifests for version '${{ inputs.version }}' ==="
+          cd k8s/overlays/${{ inputs.env }}
+          kustomize edit set image taskforge=${DOCKER_USER}/taskforge:${{ inputs.version }}
+          kubectl kustomize .
+
+  # =========================================================================
+  # APPROVAL: Optional Approval Gate
+  # =========================================================================
+  approval:
+    name: "Deployment Approval Gate (${{ inputs.approval_environment }})"
+    needs: plan
+    if: inputs.approval_environment != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.approval_environment }}
+    steps:
+      - name: Deployment Approved
+        run: |
+          echo "Approved deployment of version ${{ inputs.version }} to ${{ inputs.env }}."
+
+  # =========================================================================
+  # DEPLOY: Deploy to Target Environment with Rollout Checks & Promotion
+  # =========================================================================
+  deploy:
+    name: "Deploy to ${{ inputs.env }}"
+    needs: [plan, approval]
+    if: always() && (needs.plan.result == 'success') && (needs.approval.result == 'success' || needs.approval.result == 'skipped')
+    runs-on: ${{ inputs.runner }}
+    environment:
+      name: ${{ inputs.env }}
+    env:
+      NAMESPACE: taskforge-${{ inputs.env }}
+      DEPLOY_ENV: ${{ inputs.env }}
+      DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME || 'shubhszone' }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      TARGET_VERSION: ${{ inputs.version }}
+      RELEASE_ID: ${{ inputs.release_id }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.promote_to_latest && inputs.version || '' }}
+          clean: true
+
+      - name: Ensure Namespace Exists
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Inject Kubernetes Secrets
+        run: |
+          kubectl create secret generic taskforge-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=POSTGRES_PASSWORD="${{ env.POSTGRES_PASSWORD }}" \
+            --from-literal=DATABASE_URL="postgres://taskforge:${{ env.POSTGRES_PASSWORD }}@postgres:5432/taskforge" \
+            --from-literal=REDIS_URL="redis://redis:6379" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Set Overlay Image Tag
+        run: |
+          cd k8s/overlays/${{ env.DEPLOY_ENV }}
+          kustomize edit set image taskforge=${{ env.DOCKER_USERNAME }}/taskforge:${{ env.TARGET_VERSION }}
+
+      - name: Deploy Manifests
+        run: |
+          kubectl apply -k k8s/overlays/${{ env.DEPLOY_ENV }}
+
+      - name: Verify Rollout with Automatic Rollback
+        run: |
+          # 1. Verify stateful workloads
+          kubectl rollout status statefulset -n ${{ env.NAMESPACE }} --timeout=60s
+
+          # 2. Verify deployments with automatic rollback
+          kubectl rollout status deployment -n ${{ env.NAMESPACE }} --timeout=180s || {
+            echo "${{ inputs.env }} deployment failed! Rolling back taskforge-web..."
+            kubectl rollout undo deployment/taskforge-web -n ${{ env.NAMESPACE }}
+            kubectl rollout status deployment/taskforge-web -n ${{ env.NAMESPACE }} --timeout=120s
+            exit 1
+          }
+          kubectl get pods,services -n ${{ env.NAMESPACE }}
+
+      # Staging Post-Deploy: Publish Draft as Pre-Release Candidate and Dispatch Prod
+      - name: "Publish as Production-Eligible Pre-Release"
+        if: inputs.promote_to_prerelease == true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TARGET_VERSION }}
+          RELEASE_ID: ${{ env.RELEASE_ID }}
+        run: |
+          echo "Staging rollout verified! Publishing '${TAG}' as official Pre-Release Candidate..."
+          TARGET_ID="${RELEASE_ID}"
+          if [ -z "${TARGET_ID}" ]; then
+            TARGET_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/releases | jq -r ".[] | select(.tag_name==\"${TAG}\") | .id" | head -n 1)
+          fi
+
+          if [ -z "${TARGET_ID}" ]; then
+            echo "::error::Release for tag '${TAG}' was not found! Upstream draft release is missing."
+            exit 1
+          fi
+
+          curl -fsSL -X PATCH \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/releases/${TARGET_ID} \
+            -d "{\"name\":\"${TAG} (Release Candidate)\",\"draft\":false,\"prerelease\":true,\"make_latest\":\"false\"}"
+          echo "Successfully published ${TAG} (Release ID: ${TARGET_ID}) as Pre-Release candidate!"
+
+      - name: Trigger Production Release Pipeline
+        if: inputs.promote_to_prerelease == true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TARGET_VERSION }}
+        run: |
+          echo "Staging verified! Triggering Production Release for '${TAG}'..."
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/release-pipeline.yaml/dispatches \
+            -d "{\"ref\":\"main\",\"inputs\":{\"version\":\"${TAG}\"}}"
+
+      # Production Post-Deploy: Promote Candidate to Official Latest
+      - name: Promote Release Candidate to Official Latest Release
+        if: inputs.promote_to_latest == true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TARGET_VERSION }}
+        run: |
+          echo "Promoting release candidate '${TAG}' to Official Latest Release..."
+          RELEASE_ID=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG} | jq -r '.id // empty')
+
+          if [ -n "${RELEASE_ID}" ]; then
+            curl -fsSL -X PATCH \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID} \
+              -d "{\"name\":\"${TAG}\",\"draft\":false,\"prerelease\":false,\"make_latest\":\"true\"}"
+            echo "Successfully promoted ${TAG} (Release ID: ${RELEASE_ID}) to Official Latest Release!"
+          else
+            echo "Warning: GitHub release for tag '${TAG}' not found to update."
+          fi

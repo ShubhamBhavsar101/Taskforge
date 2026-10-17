@@ -76,9 +76,12 @@ jobs:
   # STAGE 2: Dev Manifest Preview & Approval Gate
   # =========================================================================
   dev-deploy:
-    name: "Dev Deployment"
+    name: "🧪 Dev Deployment"
     needs: build
-    uses: ./.github/workflows/reusable-dev-deploy.yaml
+    uses: ./.github/workflows/reusable-deploy.yaml
     with:
+      env: dev
       version: ${{ needs.build.outputs.version }}
+      approval_environment: approval-dev
+      runner: infra
     secrets: inherit
