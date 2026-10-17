@@ -17,10 +17,9 @@ on:
         type: string
         default: 'infra'
       approval_env:
-        description: 'Optional environment name for approval gate'
-        required: false
+        description: 'Environment name for approval gate'
+        required: true
         type: string
-        default: ''
       promote_to_prerelease:
         description: 'Whether to publish candidate as pre-release and trigger production pipeline'
         required: false
@@ -62,18 +61,14 @@ jobs:
           cd k8s/overlays/${{ inputs.env }}
           kustomize edit set image taskforge=${DOCKER_USER}/taskforge:${{ inputs.version }}
           kubectl kustomize .
-      
-      - name: DEBUG
-        run: |
-          echo "approval_env: ${{ inputs.approval_env }}"
+
 
   # =========================================================================
-  # APPROVAL: Optional Approval Gate
+  # APPROVAL: Approval Gate
   # =========================================================================
   approval:
     name: "Deployment Approval Gate"
     needs: plan
-    if: ${{ inputs.approval_env != '' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.approval_env }}
     steps:
@@ -86,11 +81,7 @@ jobs:
   # =========================================================================
   deploy:
     name: "Deploy to ${{ inputs.env }}"
-    needs: [plan, approval]
-    if: |
-      always() &&
-      (needs.plan.result == 'success') &&
-      (inputs.approval_env == '' || needs.approval.result == 'success')
+    needs: approval
     runs-on: ${{ inputs.runner }}
     environment:
       name: ${{ inputs.env }}
