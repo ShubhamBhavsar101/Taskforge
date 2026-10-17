@@ -7,6 +7,9 @@ resources:
   - namespace.yaml
   - ../../base
 
+patches:
+  - path: ingress.yaml
+
 images:
   - name: taskforge
     newName: shubhszone/taskforge
