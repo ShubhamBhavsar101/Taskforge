@@ -9,6 +9,7 @@ resources:
 
 patches:
   - path: replicas.yaml
+  - path: ingress.yaml
 
 images:
   - name: taskforge

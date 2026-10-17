@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskforge-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: dev.taskforge.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: taskforge-web
+            port:
+              number: 3000
