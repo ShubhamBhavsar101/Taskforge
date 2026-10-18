@@ -27,3 +27,5 @@ jobs:
             feat!
             NOJIRA
             chore
+          subjectPattern: ^(?![A-Z]).+$
+
