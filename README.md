@@ -121,6 +121,82 @@ Open **`http://localhost:5173`** (Vite automatically proxies `/api` requests to 
 
 ---
 
+## DevOps & Infrastructure Architecture
+
+TaskForge implements a production-grade GitOps and CI/CD lifecycle across isolated Kubernetes clusters with automated SemVer, gated approvals, and zero-downtime rollouts.
+
+```
+[ Feature PR ] ──► Semantic PR Check & Unit Tests
+       │
+   (Merge)
+       ▼
+ [ main Branch ]
+       │
+       ▼
+ 1. 📦 Build Once & SemVer Release (Docker Hub: vX.Y.Z-dev-sha)
+       │
+       ├─► 🧪 Dev Deployment (Namespace: taskforge-dev)
+       │
+       ├─► 🎲 TST Deployment (Namespace: taskforge-tst)
+       │
+       ├─► 🎯 Staging Deployment (Approval Gate: approval-staging)
+       │         │
+       │         ▼ (Rollout Verified)
+       ├─► ✈️ Publish Pre-Release Candidate (GitHub Release RC)
+       │         │
+       │         ▼ (Auto-Dispatch)
+       └─► 🚀 Production Release Pipeline
+                 │
+                 ├─► 🛡️ Preflight Checks (Verify RC Eligibility)
+                 ├─► 🔒 Production Approval Gate (approval-prod)
+                 ├─► 🚢 Deploy to Prod (Namespace: taskforge-prod)
+                 ├─► 🔄 Rollout Health Check & Auto-Rollback
+                 └─► 🌟 Promote to Official Latest Release
+```
+
+### 1. Branching & Release Strategy
+- **Conventional Commits**: Enforced on PR titles via GitHub Actions (`semantic-pull-request.yaml`).
+- **Build Once, Deploy Everywhere**: Container images are built and tagged once per commit (`shubhszone/taskforge:vX.Y.Z`). The exact same verified artifact is promoted across all stages without recompilation.
+- **Release Gating**: Merges to `main` initially create a **Pre-Release Candidate**. Only after successful Staging verification and Production sign-off is the release promoted to **Official Latest**.
+
+### 2. Multi-Cluster KinD Architecture
+Workloads are separated across isolated local KinD clusters to mirror enterprise staging/production network isolation:
+
+| Cluster | Environments | Ingress Ports | Context / Kubeconfig | Dedicated Runner |
+|---|---|---|---|---|
+| **`lower-cluster`** | Dev, TST, Staging | `4000:80`, `4435:443` | `kind-lower-cluster` (`~/.kube/config-lower-cluster`) | `infra` |
+| **`prod-cluster`** | Production | `8000:80`, `4430:443` | `kind-prod-cluster` (`~/.kube/config-prod-cluster`) | `infra-prod` |
+
+### 3. Ingress & Traffic Routing
+Host-based routing is managed by **Ingress-NGINX** controllers on both clusters:
+- **Dev**: `http://dev.taskforge.local:4000`
+- **TST**: `http://tst.taskforge.local:4000`
+- **Staging**: `http://staging.taskforge.local:4000`
+- **Production**: `http://taskforge.local:8000`
+
+*(Resolve hostnames to VM IP via Mac `/etc/hosts` or wildcard DNS like `dev.<VM_IP>.nip.io`).*
+
+### 4. Kubernetes Manifests (Kustomize)
+- **Base (`k8s/base/`)**: Shared Deployment, StatefulSet, Services, PVC, ConfigMap, and Ingress templates.
+- **Overlays (`k8s/overlays/`)**: Environment-specific patches:
+  - `dev`: Default replica count, dynamic commit image tags.
+  - `tst`: Isolated namespace, host routing patch.
+  - `staging`: Replica overrides, approval validation.
+  - `prod`: 3 web replicas, production secrets, isolated cluster target.
+
+### 5. CI/CD Reliability & Rollback Safeguards
+- **Dry-Run Planning**: Every deployment job previews manifests (`kustomize edit set image` + `kubectl kustomize .`) before applying.
+- **Secret Propagation**: Pods automatically reload secrets via triggered rolling restarts (`kubectl rollout restart`).
+- **Automated Rollback**: Deployments monitor `kubectl rollout status --timeout=180s`. If pod readiness fails, the pipeline immediately triggers `kubectl rollout undo` to restore the last known good state.
+
+### 6. Cluster Automation Scripts
+Pre-configured shell utilities located in `scripts/kind/`:
+- `create-cluster.sh --name <name>`: Boots KinD cluster with host port mappings and exports isolated kubeconfig.
+- `install-nginx-ingress-controller.sh --context <ctx>`: Deploys Ingress-NGINX controller and waits for pod readiness.
+- `start-stop-clusters.sh [start|stop|status]`: Gracefully controls cluster containers to optimize local machine memory.
+
+---
+
 ## License & Credits
 
 &copy; 2026 TaskForge. Developed by Shubham Bhavsar. Runs 100% locally.
