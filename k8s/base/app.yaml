@@ -64,4 +64,4 @@ spec:
     app: taskforge-web
   ports:
     - port: 3000
-      targetPort: 3000
+      targetPort: 3000 
