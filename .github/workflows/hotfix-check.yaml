@@ -12,9 +12,14 @@ permissions:
   actions: write
 
 jobs:
+  # =========================================================================
+  # STAGE 1: Verify PR is Merged & Originated from a Hotfix Branch
+  # =========================================================================
   check-hotfix-merge:
     name: "Check if Merged from Hotfix Branch"
     runs-on: ubuntu-latest
+    outputs:
+      is_hotfix: ${{ steps.check_branch.outputs.is_hotfix }}
     steps:
       - name: Verify Merge Status and Source Branch
         id: check_branch
@@ -30,6 +35,7 @@ jobs:
 
           if [ "${IS_MERGED}" != "true" ]; then
             echo "ℹ️ PR #${PR_NUMBER} was closed without merging. Skipping check."
+            echo "is_hotfix=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -41,16 +47,27 @@ jobs:
             echo "ℹ️ PR #${PR_NUMBER} merged to main, but it was NOT a hotfix branch (Source: '${SOURCE_BRANCH}')."
             echo "is_hotfix=false" >> $GITHUB_OUTPUT
           fi
-      
+
+  # =========================================================================
+  # STAGE 2: Calculate SemVer Patch & Build/Push Hotfix Image
+  # =========================================================================
+  build-and-push-fix:
+    name: "Build and Push Hotfix Image"
+    runs-on: ubuntu-latest
+    needs: [check-hotfix-merge]
+    if: needs.check-hotfix-merge.outputs.is_hotfix == 'true'
+    environment:
+      name: dev
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+    steps:
       - name: Checkout Code with Full History
-        if: steps.check_branch.outputs.is_hotfix == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Calculate Patch Semantic Version
         id: semver
-        if: steps.check_branch.outputs.is_hotfix == 'true'
         uses: paulhatch/semantic-version@v5.4.0
         with:
           tag_prefix: "v"
@@ -58,12 +75,42 @@ jobs:
           minor_pattern: "feat:"
           version_format: "${major}.${minor}.${patch}"
 
-      - name: Create Patch Pre-Release
-        if: steps.check_branch.outputs.is_hotfix == 'true'
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PAT_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ vars.DOCKER_USERNAME || 'shubhszone' }}/taskforge:${{ steps.semver.outputs.version }}
+
+  # =========================================================================
+  # STAGE 3: Create Pre-Release (RC) & Trigger Production Release Pipeline
+  # =========================================================================
+  pre-release-and-prod-release-trigger:
+    name: "Create Pre-Release and Trigger Prod Release"
+    runs-on: ubuntu-latest
+    needs: [check-hotfix-merge, build-and-push-fix]
+    if: needs.check-hotfix-merge.outputs.is_hotfix == 'true'
+    steps:
+      - name: Create Patch Pre-Release Candidate
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.semver.outputs.version }}
-          name: "${{ steps.semver.outputs.version }} (Hotfix Release Candidate)"
+          tag_name: ${{ needs.build-and-push-fix.outputs.version }}
+          name: "${{ needs.build-and-push-fix.outputs.version }} (Hotfix Release Candidate)"
           body: "🔥 Hotfix Patch automatically generated from PR #${{ github.event.pull_request.number }} (${{ github.event.pull_request.head.ref }})."
           prerelease: true
           target_commitish: main
@@ -71,12 +118,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Trigger Production Release Pipeline
-        if: steps.check_branch.outputs.is_hotfix == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run release-pipeline.yaml --ref main -f version="${{ steps.semver.outputs.version }}"
-
-
-
-
+          echo "Triggering Production Release for version: ${{ needs.build-and-push-fix.outputs.version }}"
+          gh workflow run release-pipeline.yaml --ref main -f version="${{ needs.build-and-push-fix.outputs.version }}"
