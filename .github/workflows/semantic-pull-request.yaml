@@ -16,14 +16,28 @@ jobs:
     name: Validate PR Title
     runs-on: ubuntu-latest
     steps:
-      - name: Validate Source Branch Prefix
+      - name: Validate Source Branch Prefix & Enforce Hotfix Rules
         run: |
           BRANCH_NAME="${{ github.head_ref }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
           echo "PR Source Branch: ${BRANCH_NAME}"
-          if [[ ! "${BRANCH_NAME}" =~ ^feature/ ]]; then
-            echo "::error::Pull Requests targeting 'main' must originate from a 'feature/' branch! Received: '${BRANCH_NAME}'"
+          echo "PR Title: ${PR_TITLE}"
+
+          # 1. Enforce allowed branch prefixes
+          if [[ ! "${BRANCH_NAME}" =~ ^(feature|hotfix)/ ]]; then
+            echo "::error::Pull Requests targeting 'main' must originate from a 'feature/' or 'hotfix/' branch! Received: '${BRANCH_NAME}'"
             exit 1
           fi
+
+          # 2. Enforce that hotfix branches can ONLY have 'fix:' PR titles (guarantees patch-only releases)
+          if [[ "${BRANCH_NAME}" =~ ^hotfix/ ]]; then
+            if [[ ! "${PR_TITLE}" =~ ^fix(\([a-zA-Z0-9_-]+\))?:[[:space:]] ]]; then
+              echo "::error::Hotfix branches ('${BRANCH_NAME}') are restricted to patch releases only! PR title must start with 'fix:' or 'fix(scope):'. Received: '${PR_TITLE}'"
+              exit 1
+            fi
+            echo "✅ Valid hotfix PR title (fix): '${PR_TITLE}'"
+          fi
+
           echo "Branch name '${BRANCH_NAME}' is valid."
           
       - name: Validate Conventional Commit PR Title
