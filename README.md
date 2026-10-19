@@ -2,6 +2,8 @@
 
 **TaskForge** is a fast, lightweight, and modern task management platform built with **React**, **Node.js (Express)**, **PostgreSQL**, and **Redis**.
 
+![TaskForge UI](screenshots/Screenshot%202026-10-18%20at%208.06.30%E2%80%AFAM.png)
+
 ---
 
 ## Architecture Overview

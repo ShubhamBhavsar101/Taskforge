@@ -1,0 +1,82 @@
+name: "Merge Checks"
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  check-hotfix-merge:
+    name: "Check if Merged from Hotfix Branch"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Merge Status and Source Branch
+        id: check_branch
+        run: |
+          # 1. Ensure the Pull Request was actually merged (not just closed without merging)
+          IS_MERGED="${{ github.event.pull_request.merged }}"
+          SOURCE_BRANCH="${{ github.event.pull_request.head.ref }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          echo "PR Number: #${PR_NUMBER}"
+          echo "Merged status: ${IS_MERGED}"
+          echo "Source Branch: ${SOURCE_BRANCH}"
+
+          if [ "${IS_MERGED}" != "true" ]; then
+            echo "ℹ️ PR #${PR_NUMBER} was closed without merging. Skipping check."
+            exit 0
+          fi
+
+          # 2. Check if the source branch starts with 'hotfix/'
+          if [[ "${SOURCE_BRANCH}" =~ ^(hotfix/) ]]; then
+            echo "✅ CONFIRMED: PR #${PR_NUMBER} merged to main originated from a hotfix branch: '${SOURCE_BRANCH}'"
+            echo "is_hotfix=true" >> $GITHUB_OUTPUT
+          else
+            echo "ℹ️ PR #${PR_NUMBER} merged to main, but it was NOT a hotfix branch (Source: '${SOURCE_BRANCH}')."
+            echo "is_hotfix=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Checkout Code with Full History
+        if: steps.check_branch.outputs.is_hotfix == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Patch Semantic Version
+        id: semver
+        if: steps.check_branch.outputs.is_hotfix == 'true'
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "BREAKING CHANGE:|feat!:"
+          minor_pattern: "feat:"
+          version_format: "${major}.${minor}.${patch}"
+
+      - name: Create Patch Pre-Release
+        if: steps.check_branch.outputs.is_hotfix == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.semver.outputs.version }}
+          name: "${{ steps.semver.outputs.version }} (Hotfix Release Candidate)"
+          body: "🔥 Hotfix Patch automatically generated from PR #${{ github.event.pull_request.number }} (${{ github.event.pull_request.head.ref }})."
+          prerelease: true
+          target_commitish: main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger Production Release Pipeline
+        if: steps.check_branch.outputs.is_hotfix == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run release-pipeline.yaml --ref main -f version="${{ steps.semver.outputs.version }}"
+
+
+
+
