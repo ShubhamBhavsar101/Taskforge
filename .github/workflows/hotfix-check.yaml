@@ -62,7 +62,7 @@ jobs:
       version: ${{ steps.semver.outputs.version }}
     steps:
       - name: Checkout Code with Full History
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -106,6 +106,11 @@ jobs:
     needs: [check-hotfix-merge, build-and-push-fix]
     if: needs.check-hotfix-merge.outputs.is_hotfix == 'true'
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+        
       - name: Create Patch Pre-Release Candidate
         uses: softprops/action-gh-release@v2
         with:
